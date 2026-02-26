@@ -135,7 +135,7 @@ const BASE_FLAP = -6.8;   // snappier upward kick
 const MAX_FALL_SPEED = 15;      // allow slightly faster falling
 const BASE_SPEED = 2.4;    // faster scroll speed
 const PIPE_WIDTH = 52;
-const MIN_GAP = 90;    // generous pipe gap
+const MIN_GAP = 80;    // generous pipe gap
 const PIPE_SPAWN_DIST = 170;    // spacing between pipes
 const PIPE_START_DELAY = 200;    // ~3.3s grace period before pipes
 const SCORE_PER_DIM = 50; // score needed to advance to next dimension
@@ -597,16 +597,25 @@ function onFlap() {
 }
 
 document.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); onFlap(); } });
-canvas.addEventListener('click', onFlap);
-canvas.addEventListener('touchstart', e => { e.preventDefault(); onFlap(); }, { passive: false });
+let _lastCanvasTouchTime = 0;
+canvas.addEventListener('click', e => {
+  // Suppress synthetic click fired by browser after touchstart (within 500ms)
+  if (Date.now() - _lastCanvasTouchTime < 500) return;
+  onFlap();
+});
+canvas.addEventListener('touchstart', e => { e.preventDefault(); _lastCanvasTouchTime = Date.now(); onFlap(); }, { passive: false });
 
 // ── Tablet / desktop: also respond to taps/clicks OUTSIDE the phone frame
+// Track last touch time to prevent the browser's synthetic click from double-firing
+let _lastOutsideTouchTime = 0;
+
 document.addEventListener('touchstart', e => {
   // Only fire if the touch didn't originate inside the game area (canvas already handles those)
   // and is not on a button or input element
   const target = e.target;
   if (target === canvas) return; // already handled above
   if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'LABEL') return;
+  _lastOutsideTouchTime = Date.now();
   onFlap();
 }, { passive: true });
 
@@ -616,6 +625,8 @@ document.addEventListener('click', e => {
   if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'LABEL') return;
   // Only fire if the click was outside the game-area (i.e. on the tablet background)
   if (gameArea.contains(target)) return;
+  // Suppress synthetic click fired by browser after touchstart (within 500ms)
+  if (Date.now() - _lastOutsideTouchTime < 500) return;
   onFlap();
 });
 
