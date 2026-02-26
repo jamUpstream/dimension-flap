@@ -1,0 +1,121 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+  <title>Dimension Flap</title>
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+
+  <!-- Decorative page background glows -->
+  <div class="page-bg">
+    <div class="bg-glow bg-glow-1"></div>
+    <div class="bg-glow bg-glow-2"></div>
+  </div>
+
+  <!-- ═══════════════════════════════════════════
+       PHONE FRAME
+  ════════════════════════════════════════════ -->
+  <div class="phone-frame">
+
+    <!-- Top bar -->
+    <div class="phone-topbar">
+      <span class="phone-camera"></span>
+      <span class="phone-title-bar">DIMENSION FLAP</span>
+      <span class="phone-speaker"></span>
+    </div>
+
+    <!-- Game viewport -->
+    <div class="game-area" id="gameArea">
+
+      <!-- Canvas -->
+      <canvas id="gameCanvas"></canvas>
+
+      <!-- HUD -->
+      <div id="hud" class="hud hidden">
+        <div class="hud-score" id="scoreDisplay">0</div>
+        <div class="hud-dim"   id="dimDisplay">DIM 1</div>
+      </div>
+
+      <!-- Dimension transition banner -->
+      <div id="dimBanner" class="dim-banner">
+        <span id="dimBannerText">DIMENSION 1</span>
+      </div>
+
+      <!-- ── START SCREEN ── -->
+      <div id="startScreen" class="screen active">
+        <div class="screen-content">
+          <div class="title-block">
+            <span class="title-dim">◈</span>
+            <h1 class="title">DIMENSION<br>FLAP</h1>
+            <span class="title-dim">◈</span>
+          </div>
+          <div class="instructions">
+            <p><kbd>SPACE</kbd> or <kbd>TAP</kbd> to flap</p>
+            <p class="sub">Survive shifting dimensions</p>
+          </div>
+          <button id="startBtn"       class="btn btn-primary">ENTER VOID</button>
+          <button id="leaderboardBtn" class="btn btn-ghost">LEADERBOARD</button>
+        </div>
+      </div>
+
+      <!-- ── GAME OVER / SAVE SCORE SCREEN ── -->
+      <div id="gameOverScreen" class="screen">
+        <div class="screen-content">
+          <h2 class="over-title">COLLAPSED</h2>
+
+          <div class="scores-row">
+            <div class="score-display">
+              <span class="score-label">SCORE</span>
+              <span id="finalScore" class="score-value">0</span>
+            </div>
+            <div class="score-divider"></div>
+            <div class="score-display">
+              <span class="score-label">BEST</span>
+              <span id="bestScore" class="score-value">0</span>
+            </div>
+          </div>
+
+          <!-- Name entry to save score -->
+          <div class="name-entry" id="nameEntry">
+            <label class="name-label">ENTER YOUR NAME</label>
+            <input id="playerNameInput" class="name-input" type="text"
+                   maxlength="16" placeholder="PLAYER" autocomplete="off" spellcheck="false" />
+            <button id="saveScoreBtn" class="btn btn-primary">SAVE SCORE</button>
+            <div id="saveStatus" class="save-status"></div>
+          </div>
+
+          <div class="btn-row">
+            <button id="restartBtn"       class="btn btn-primary">RETRY</button>
+            <button id="goLeaderboardBtn" class="btn btn-ghost">LEADERBOARD</button>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── LEADERBOARD SCREEN ── -->
+      <div id="leaderboardScreen" class="screen">
+        <div class="screen-content leaderboard-content">
+          <h2 class="lb-title">◈ TOP PILOTS ◈</h2>
+          <div id="lbList" class="lb-list">
+            <div class="lb-loading">LOADING...</div>
+          </div>
+          <button id="lbCloseBtn" class="btn btn-ghost">BACK</button>
+        </div>
+      </div>
+
+    </div><!-- /game-area -->
+
+    <!-- Bottom bar -->
+    <div class="phone-bottombar">
+      <span class="phone-home-btn"></span>
+    </div>
+
+  </div><!-- /phone-frame -->
+
+  <script src="script.js"></script>
+</body>
+</html>

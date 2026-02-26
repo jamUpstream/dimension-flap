@@ -1,0 +1,726 @@
+
+const SUPABASE_URL = 'https://zuukqwhpuvqhomfvyzfu.supabase.co';
+const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1dWtxd2hwdXZxaG9tZnZ5emZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MzUwMjksImV4cCI6MjA4NzQxMTAyOX0.NON1QYVhhhQNLCFhIMLPpX6hIwzz3qGTSamunp2XdpY';
+const SCORES_TABLE = 'dimension-flap_scores';
+
+// Thin Supabase REST helper (no SDK needed)
+const sb = {
+  headers: {
+    'Content-Type': 'application/json',
+    'apikey': SUPABASE_ANON,
+    'Authorization': 'Bearer ' + SUPABASE_ANON,
+  },
+  async insert(row) {
+    const res = await fetch(`${SUPABASE_URL}/rest/v1/${SCORES_TABLE}`, {
+      method: 'POST',
+      headers: { ...this.headers, 'Prefer': 'return=minimal' },
+      body: JSON.stringify(row),
+    });
+    return res.ok;
+  },
+  async topScores(limit = 15) {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/${SCORES_TABLE}?select=name,score,max_dimension&order=score.desc&limit=${limit}`,
+      { headers: this.headers }
+    );
+    if (!res.ok) return null;
+    return res.json();
+  },
+};
+
+// ══════════════════════════════════════════════════════════
+// CANVAS & DOM
+// ══════════════════════════════════════════════════════════
+const canvas = document.getElementById('gameCanvas');
+const ctx = canvas.getContext('2d');
+const gameArea = document.getElementById('gameArea');
+
+const startScreen = document.getElementById('startScreen');
+const gameOverScreen = document.getElementById('gameOverScreen');
+const leaderboardScreen = document.getElementById('leaderboardScreen');
+const hud = document.getElementById('hud');
+const scoreDisplay = document.getElementById('scoreDisplay');
+const dimDisplay = document.getElementById('dimDisplay');
+const finalScoreEl = document.getElementById('finalScore');
+const bestScoreEl = document.getElementById('bestScore');
+const dimBanner = document.getElementById('dimBanner');
+const dimBannerText = document.getElementById('dimBannerText');
+const playerNameInput = document.getElementById('playerNameInput');
+const saveScoreBtn = document.getElementById('saveScoreBtn');
+const saveStatus = document.getElementById('saveStatus');
+const lbList = document.getElementById('lbList');
+
+document.getElementById('startBtn').addEventListener('click', startGame);
+document.getElementById('restartBtn').addEventListener('click', startGame);
+document.getElementById('leaderboardBtn').addEventListener('click', openLeaderboard);
+document.getElementById('goLeaderboardBtn').addEventListener('click', openLeaderboard);
+document.getElementById('lbCloseBtn').addEventListener('click', closeLeaderboard);
+saveScoreBtn.addEventListener('click', handleSaveScore);
+
+// ══════════════════════════════════════════════════════════
+// CONSTANTS
+// ══════════════════════════════════════════════════════════
+const BASE_GRAVITY = 0.16;   // very gentle gravity
+const BASE_FLAP = -5.2;   // solid upward kick per flap
+const MAX_FALL_SPEED = 5;      // strict fall cap — no plummeting
+const BASE_SPEED = 1.8;    // comfortable scroll speed
+const PIPE_WIDTH = 52;
+const MIN_GAP = 160;    // generous pipe gap
+const PIPE_SPAWN_DIST = 340;    // spacing between pipes
+const PIPE_START_DELAY = 200;    // ~3.3s grace period before pipes
+const SCORE_PER_DIM = 8;
+const BIRD_W = 32;
+const BIRD_H = 26;
+const GROUND_H = 50;
+
+// ══════════════════════════════════════════════════════════
+// DIMENSIONS
+// ══════════════════════════════════════════════════════════
+const DIMENSIONS = [
+  {
+    id: 1, name: "NORMAL",
+    bgTop: "#0d0d2b", bgBot: "#1a1a3a",
+    pipeColor: "#00ffcc", pipeGlow: "#00ffcc", groundColor: "#1a3a2a", accentColor: "#00ffcc",
+    gravMult: 1.0, speedMult: 1.0, gapMod: 0, pipesMove: false, invertGravity: false, glitch: false
+  },
+  {
+    id: 2, name: "OVERDRIVE",
+    bgTop: "#1a0d00", bgBot: "#3a1a00",
+    pipeColor: "#ff8c00", pipeGlow: "#ff8c00", groundColor: "#3a1a00", accentColor: "#ff8c00",
+    gravMult: 1.1, speedMult: 1.35, gapMod: -8, pipesMove: false, invertGravity: false, glitch: false
+  },
+  {
+    id: 3, name: "WARP",
+    bgTop: "#0d001a", bgBot: "#1a0033",
+    pipeColor: "#cc00ff", pipeGlow: "#cc00ff", groundColor: "#1a0033", accentColor: "#cc00ff",
+    // Easier: slightly lighter gravity, modest speed bump, WIDER gap (+20),
+    // slow gentle pipe sway so you can track them easily
+    gravMult: 0.82, speedMult: 1.2, gapMod: 20,
+    pipesMove: true, pipeMoveAmp: 22, pipeMoveSpeed: 0.01, invertGravity: false, glitch: false
+  },
+  {
+    id: 4, name: "VOID",
+    bgTop: "#000000", bgBot: "#0a0010",
+    pipeColor: "#ff3c78", pipeGlow: "#ff3c78", groundColor: "#0a000a", accentColor: "#ff3c78",
+    gravMult: 1.2, speedMult: 1.85, gapMod: -16,
+    pipesMove: true, pipeMoveAmp: 90, pipeMoveSpeed: 0.035, invertGravity: false, glitch: true
+  },
+  {
+    id: 5, name: "INVERSION",
+    bgTop: "#001a1a", bgBot: "#003333",
+    pipeColor: "#00ffff", pipeGlow: "#00ffff", groundColor: "#003333", accentColor: "#00ffff",
+    gravMult: -1.0, speedMult: 2.0, gapMod: -10,
+    pipesMove: true, pipeMoveAmp: 55, pipeMoveSpeed: 0.03, invertGravity: true, glitch: false
+  },
+  {
+    id: 6, name: "CHAOS",
+    bgTop: "#1a0a00", bgBot: "#0a001a",
+    pipeColor: "#ffff00", pipeGlow: "#ffff00", groundColor: "#1a1a00", accentColor: "#ffff00",
+    gravMult: 1.4, speedMult: 2.3, gapMod: -22,
+    pipesMove: true, pipeMoveAmp: 110, pipeMoveSpeed: 0.05, invertGravity: false, glitch: true
+  },
+];
+
+// ══════════════════════════════════════════════════════════
+// GAME STATE
+// ══════════════════════════════════════════════════════════
+let state = {};
+let animFrame;
+let bestScore = 0;
+let glitchTimer = 0;
+let scoreSaved = false;  // track if score was already saved this round
+
+// ══════════════════════════════════════════════════════════
+// HELPERS
+// ══════════════════════════════════════════════════════════
+function roundRect(ctx, x, y, w, h, r) {
+  ctx.beginPath();
+  ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
+  ctx.quadraticCurveTo(x + w, y, x + w, y + r); ctx.lineTo(x + w, y + h - r);
+  ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h); ctx.lineTo(x + r, y + h);
+  ctx.quadraticCurveTo(x, y + h, x, y + h - r); ctx.lineTo(x, y + r);
+  ctx.quadraticCurveTo(x, y, x + r, y);
+}
+
+function shadeColor(color, amount) {
+  const num = parseInt(color.replace('#', ''), 16);
+  const r = Math.min(255, Math.max(0, (num >> 16) + amount));
+  const g = Math.min(255, Math.max(0, ((num >> 8) & 0xff) + amount));
+  const b = Math.min(255, Math.max(0, (num & 0xff) + amount));
+  return 'rgb(' + r + ',' + g + ',' + b + ')';
+}
+
+// ══════════════════════════════════════════════════════════
+// DRAW: BIRD
+// ══════════════════════════════════════════════════════════
+function drawBird(x, y, wingPhase, dim) {
+  const w = BIRD_W, h = BIRD_H;
+  const cx = x + w / 2, cy = y + h / 2;
+  ctx.save();
+  if (state.invertGravity) {
+    ctx.translate(cx, cy); ctx.scale(1, -1); ctx.translate(-cx, -cy);
+  }
+  const wingDrop = Math.sin(wingPhase) * 5;
+  ctx.shadowColor = dim.accentColor; ctx.shadowBlur = 10;
+  ctx.fillStyle = dim.accentColor;
+  roundRect(ctx, x + 4, y + 5, w - 8, h - 9, 4); ctx.fill();
+  ctx.fillStyle = shadeColor(dim.accentColor, -40);
+  roundRect(ctx, x - 5, cy - 4 + wingDrop, 12, 9, 3); ctx.fill();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = '#0a0a12'; ctx.fillRect(x + w - 14, y + 7, 7, 6);
+  ctx.fillStyle = '#ffffff'; ctx.fillRect(x + w - 13, y + 8, 3, 3);
+  ctx.fillStyle = '#ffaa00';
+  ctx.beginPath();
+  ctx.moveTo(x + w - 3, cy - 1); ctx.lineTo(x + w + 7, cy + 1); ctx.lineTo(x + w - 3, cy + 4);
+  ctx.closePath(); ctx.fill();
+  ctx.restore();
+}
+
+// ══════════════════════════════════════════════════════════
+// DRAW: BURST / POP EXPLOSION
+// ══════════════════════════════════════════════════════════
+function drawPop(pop) {
+  const t = pop.frame / pop.maxFrames;  // 0 → 1
+  const cx = pop.x, cy = pop.y;
+
+  ctx.save();
+
+  // ── 1. Shockwave ring ──
+  const ringProgress = Math.min(1, t * 1.8);
+  const ringR = ringProgress * 52;
+  const ringA = Math.max(0, 1 - ringProgress * 1.1);
+  ctx.globalAlpha = ringA;
+  ctx.strokeStyle = pop.color;
+  ctx.shadowColor = pop.color;
+  ctx.shadowBlur = 22;
+  ctx.lineWidth = 4 * (1 - ringProgress);
+  ctx.beginPath(); ctx.arc(cx, cy, ringR, 0, Math.PI * 2); ctx.stroke();
+
+  // ── 2. Second outer ring (slightly delayed) ──
+  const ring2p = Math.max(0, t - 0.12) / 0.88;
+  const ring2r = Math.min(1, ring2p * 2) * 70;
+  const ring2a = Math.max(0, 0.6 - ring2p * 0.7);
+  if (ring2a > 0) {
+    ctx.globalAlpha = ring2a;
+    ctx.strokeStyle = '#ffffff';
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 10;
+    ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(cx, cy, ring2r, 0, Math.PI * 2); ctx.stroke();
+  }
+
+  // ── 3. Pixel square particles ──
+  const NUM = 16;
+  for (let i = 0; i < NUM; i++) {
+    const angle = (i / NUM) * Math.PI * 2 + (i % 2 === 0 ? 0.1 : -0.1);
+    const delay = (i % 3) * 0.05;
+    const prog = Math.max(0, Math.min(1, (t - delay) / (1 - delay)));
+    if (prog <= 0) continue;
+
+    // Ease out: fast start, decelerate
+    const eased = 1 - Math.pow(1 - prog, 2.5);
+    const dist = eased * (38 + (i % 3) * 14);
+    const px = cx + Math.cos(angle) * dist;
+    const py = cy + Math.sin(angle) * dist;
+    const size = Math.max(1, (1 - prog) * 8);
+    const alpha = Math.max(0, 1 - prog * 1.1);
+
+    ctx.globalAlpha = alpha;
+    ctx.shadowBlur = 6;
+    // Alternate colors: accent, white, secondary accent
+    if (i % 3 === 0) { ctx.fillStyle = pop.color; ctx.shadowColor = pop.color; }
+    else if (i % 3 === 1) { ctx.fillStyle = '#ffffff'; ctx.shadowColor = '#ffffff'; }
+    else { ctx.fillStyle = '#ff3c78'; ctx.shadowColor = '#ff3c78'; }
+
+    ctx.fillRect(Math.round(px - size / 2), Math.round(py - size / 2),
+      Math.round(size), Math.round(size));
+  }
+
+  // ── 4. Central bright flash (only first 30% of animation) ──
+  if (t < 0.3) {
+    const flashA = 1 - (t / 0.3);
+    const flashR = flashA * 16;
+    ctx.globalAlpha = flashA * 0.95;
+    ctx.fillStyle = '#ffffff';
+    ctx.shadowColor = '#ffffff';
+    ctx.shadowBlur = 30;
+    ctx.beginPath(); ctx.arc(cx, cy, flashR, 0, Math.PI * 2); ctx.fill();
+  }
+
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+// ══════════════════════════════════════════════════════════
+// DRAW: PIPE
+// ══════════════════════════════════════════════════════════
+function drawPipe(x, y, w, h, isTop, dim) {
+  if (h <= 0) return;
+  const capH = 16, capW = w + 10;
+  ctx.save();
+  ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 16;
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  grad.addColorStop(0, shadeColor(dim.pipeColor, -60));
+  grad.addColorStop(0.3, dim.pipeColor);
+  grad.addColorStop(1, shadeColor(dim.pipeColor, -40));
+  ctx.fillStyle = grad; ctx.fillRect(x, y, w, h);
+  ctx.fillStyle = shadeColor(dim.pipeColor, 20);
+  ctx.fillRect(x - (capW - w) / 2, isTop ? y + h - capH : y, capW, capH);
+  ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(x + 5, y, 5, h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1;
+  for (let py = y; py < y + h; py += 14) {
+    ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x + w, py); ctx.stroke();
+  }
+  ctx.restore();
+}
+
+// ══════════════════════════════════════════════════════════
+// DRAW: BACKGROUND
+// ══════════════════════════════════════════════════════════
+function drawBackground(dim) {
+  const grad = ctx.createLinearGradient(0, 0, 0, canvas.height - GROUND_H);
+  grad.addColorStop(0, dim.bgTop); grad.addColorStop(1, dim.bgBot);
+  ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
+  drawStars(dim);
+  if (dim.glitch && glitchTimer > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,' + (0.04 + Math.random() * 0.04) + ')';
+    ctx.fillRect(0, Math.random() * canvas.height, canvas.width, 2 + Math.random() * 3);
+  }
+}
+
+function drawStars(dim) {
+  ctx.save();
+  for (const s of state.stars) {
+    s.x -= s.speed * (state.speed / BASE_SPEED) * 0.25;
+    if (s.x < 0) { s.x = canvas.width; s.y = Math.random() * (canvas.height - GROUND_H); }
+    ctx.globalAlpha = s.alpha;
+    ctx.fillStyle = dim.accentColor;
+    ctx.shadowColor = dim.accentColor;
+    ctx.shadowBlur = s.big ? 5 : 0;
+    ctx.fillRect(Math.round(s.x), Math.round(s.y), s.big ? 2 : 1, s.big ? 2 : 1);
+  }
+  ctx.globalAlpha = 1; ctx.shadowBlur = 0;
+  ctx.restore();
+}
+
+// ══════════════════════════════════════════════════════════
+// DRAW: GROUND
+// ══════════════════════════════════════════════════════════
+function drawGround(dim) {
+  const gy = canvas.height - GROUND_H;
+  ctx.fillStyle = dim.groundColor; ctx.fillRect(0, gy, canvas.width, GROUND_H);
+  ctx.strokeStyle = dim.pipeColor; ctx.lineWidth = 2;
+  ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 8;
+  ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
+  ctx.shadowBlur = 0;
+  ctx.fillStyle = shadeColor(dim.groundColor, 12);
+  const bw = 44, offset = state.groundOffset % bw;
+  for (let bx = -bw + offset; bx < canvas.width + bw; bx += bw)
+    ctx.fillRect(Math.round(bx), gy + 3, bw - 2, 9);
+}
+
+// ══════════════════════════════════════════════════════════
+// PIPE HELPERS
+// ══════════════════════════════════════════════════════════
+function getPipeMoveOffset(p) {
+  if (!state.dim.pipesMove) return 0;
+  return Math.sin(p.movePhase) * state.dim.pipeMoveAmp;
+}
+
+function spawnPipe() {
+  const gap = Math.max(MIN_GAP, MIN_GAP + Math.max(0, 50 - state.score * 1.2) + state.dim.gapMod);
+  const usableH = canvas.height - GROUND_H;
+  const minTopH = 55, maxTopH = usableH - gap - 55;
+  const topH = minTopH + Math.random() * (maxTopH - minTopH);
+  state.pipes.push({ x: canvas.width + PIPE_WIDTH, topH, gap, movePhase: Math.random() * Math.PI * 2, counted: false });
+}
+
+// ══════════════════════════════════════════════════════════
+// INPUT
+// ══════════════════════════════════════════════════════════
+function onFlap() {
+  if (!state.running) return;
+  // Block ALL input during the countdown
+  if (state.frameCount < PIPE_START_DELAY) return;
+  state.hasFlapped = true;
+  state.velY = state.invertGravity ? Math.abs(BASE_FLAP) : BASE_FLAP;
+  state.wingPhase = 0;
+}
+
+document.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); onFlap(); } });
+canvas.addEventListener('click', onFlap);
+canvas.addEventListener('touchstart', e => { e.preventDefault(); onFlap(); }, { passive: false });
+
+// ══════════════════════════════════════════════════════════
+// CANVAS RESIZE
+// ══════════════════════════════════════════════════════════
+function resizeCanvas() {
+  const rect = gameArea.getBoundingClientRect();
+  canvas.width = rect.width || 390;
+  canvas.height = rect.height || 620;
+}
+window.addEventListener('resize', () => {
+  resizeCanvas();
+  if (state && state.bird)
+    state.bird.y = Math.min(state.bird.y, canvas.height - GROUND_H - BIRD_H);
+});
+
+// ══════════════════════════════════════════════════════════
+// STARS
+// ══════════════════════════════════════════════════════════
+function generateStars() {
+  const stars = [];
+  for (let i = 0; i < 60; i++)
+    stars.push({
+      x: Math.random() * canvas.width,
+      y: Math.random() * (canvas.height - GROUND_H),
+      speed: 0.25 + Math.random() * 0.6,
+      alpha: 0.3 + Math.random() * 0.7,
+      big: Math.random() < 0.15,
+    });
+  return stars;
+}
+
+// ══════════════════════════════════════════════════════════
+// RESET
+// ══════════════════════════════════════════════════════════
+function resetGame() {
+  resizeCanvas();
+  const bx = canvas.width * 0.22;
+  const by = canvas.height * 0.42;
+  state = {
+    running: true,
+    bird: { x: bx, y: by, startY: by },
+    velY: 0,
+    score: 0,
+    dimIndex: 0,
+    dim: DIMENSIONS[0],
+    speed: BASE_SPEED,
+    gravity: BASE_GRAVITY,
+    invertGravity: false,
+    pipes: [],
+    stars: generateStars(),
+    groundOffset: 0,
+    wingPhase: 0,
+    frameCount: 0,
+    hasFlapped: false,
+    pop: null,
+  };
+  scoreSaved = false;
+}
+
+// ══════════════════════════════════════════════════════════
+// DIMENSION ADVANCE
+// ══════════════════════════════════════════════════════════
+function advanceDimension() {
+  if (state.dimIndex >= DIMENSIONS.length - 1) return;
+  state.dimIndex++;
+  state.dim = DIMENSIONS[state.dimIndex];
+  state.speed = BASE_SPEED * state.dim.speedMult;
+  state.gravity = BASE_GRAVITY * Math.abs(state.dim.gravMult);
+  state.invertGravity = state.dim.invertGravity;
+  dimBannerText.textContent = 'DIM ' + state.dim.id + ': ' + state.dim.name;
+  dimBanner.classList.remove('show');
+  void dimBanner.offsetWidth;
+  dimBanner.style.color = state.dim.accentColor;
+  dimBanner.style.borderColor = state.dim.accentColor;
+  dimBanner.style.textShadow = '0 0 20px ' + state.dim.accentColor;
+  dimBanner.classList.add('show');
+  gameArea.classList.remove('shake', 'glitch-flash');
+  void gameArea.offsetWidth;
+  gameArea.classList.add('shake');
+  setTimeout(() => gameArea.classList.add('glitch-flash'), 100);
+  setTimeout(() => gameArea.classList.remove('shake', 'glitch-flash'), 500);
+  dimDisplay.style.color = state.dim.accentColor;
+  dimDisplay.textContent = 'DIM ' + state.dim.id;
+}
+
+// ══════════════════════════════════════════════════════════
+// COLLISION
+// ══════════════════════════════════════════════════════════
+function checkCollisions(inGrace) {
+  const bx = state.bird.x + 4, by = state.bird.y + 4;
+  const bw = BIRD_W - 8, bh = BIRD_H - 6;
+  const groundY = canvas.height - GROUND_H;
+  if (!state.invertGravity && by + bh >= groundY) return true;
+  if (state.invertGravity && by <= 0) return true;
+  if (!inGrace) {
+    for (const p of state.pipes) {
+      const yOff = getPipeMoveOffset(p);
+      const topB = yOff + p.topH, botT = topB + p.gap;
+      if (bx + bw > p.x && bx < p.x + PIPE_WIDTH)
+        if (by < topB || by + bh > botT) return true;
+    }
+  }
+  return false;
+}
+
+// ══════════════════════════════════════════════════════════
+// UPDATE
+// ══════════════════════════════════════════════════════════
+function update() {
+  if (!state.running) return;
+  state.frameCount++;
+
+  glitchTimer = state.dim.glitch ? Math.max(0, glitchTimer - 1) : 0;
+  if (state.dim.glitch && Math.random() < 0.025) glitchTimer = 4;
+
+  // Physics — gravity only after first flap; hover bob until then
+  if (state.hasFlapped) {
+    const gravDir = state.invertGravity ? -1 : 1;
+    state.velY += state.gravity * gravDir;
+    if (!state.invertGravity) state.velY = Math.min(state.velY, MAX_FALL_SPEED);
+    else state.velY = Math.max(state.velY, -MAX_FALL_SPEED);
+    state.bird.y += state.velY;
+  } else {
+    state.bird.y = state.bird.startY + Math.sin(state.frameCount * 0.06) * 5;
+  }
+
+  state.wingPhase += 0.2;
+  state.groundOffset += state.speed;
+
+  const inGrace = state.frameCount < PIPE_START_DELAY;
+  if (!inGrace) {
+    for (const p of state.pipes) {
+      p.x -= state.speed;
+      if (state.dim.pipesMove) p.movePhase += state.dim.pipeMoveSpeed;
+      if (!p.counted && p.x + PIPE_WIDTH < state.bird.x) {
+        p.counted = true;
+        state.score++;
+        scoreDisplay.textContent = state.score;
+        if (state.score > 0 && state.score % SCORE_PER_DIM === 0) advanceDimension();
+      }
+    }
+    state.pipes = state.pipes.filter(p => p.x + PIPE_WIDTH + 10 > 0);
+    const lastPipe = state.pipes[state.pipes.length - 1];
+    if (!lastPipe || lastPipe.x < canvas.width - PIPE_SPAWN_DIST) spawnPipe();
+  }
+
+  if (checkCollisions(inGrace)) endGame();
+}
+
+// ══════════════════════════════════════════════════════════
+// DRAW
+// ══════════════════════════════════════════════════════════
+function draw() {
+  const dim = state.dim;
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBackground(dim);
+
+  const usableH = canvas.height - GROUND_H;
+  for (const p of state.pipes) {
+    const yOff = getPipeMoveOffset(p);
+    drawPipe(p.x, yOff, PIPE_WIDTH, p.topH, true, dim);
+    drawPipe(p.x, yOff + p.topH + p.gap, PIPE_WIDTH, usableH - (yOff + p.topH + p.gap), false, dim);
+  }
+
+  drawGround(dim);
+
+  // Bird OR pop
+  if (state.pop) {
+    drawPop(state.pop);
+  } else {
+    drawBird(state.bird.x, state.bird.y, state.wingPhase, dim);
+  }
+
+  // Countdown overlay
+  if (state.frameCount < PIPE_START_DELAY) {
+    const f = state.frameCount;
+    const total = PIPE_START_DELAY;
+    const slot = Math.min(3, Math.floor(f / (total / 4)));
+    const slotProg = (f % (total / 4)) / (total / 4);
+    const labels = ['3', '2', '1', 'GO!'];
+    const label = labels[slot];
+    const scale = 0.7 + Math.sin(slotProg * Math.PI) * 0.5;
+    const alpha = slotProg < 0.85 ? 1 : 1 - ((slotProg - 0.85) / 0.15);
+
+    ctx.save();
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.globalAlpha = 0.35; ctx.fillStyle = '#000';
+    ctx.fillRect(0, canvas.height * 0.32, canvas.width, canvas.height * 0.22);
+    ctx.globalAlpha = alpha * 0.9;
+    ctx.font = '12px "Share Tech Mono",monospace';
+    ctx.fillStyle = dim.accentColor; ctx.shadowColor = dim.accentColor; ctx.shadowBlur = 10;
+    ctx.fillText(slot < 3 ? 'GET READY — PIPES INCOMING' : 'FLAP NOW!',
+      canvas.width / 2, canvas.height * 0.36);
+    const fs = Math.round(canvas.width * 0.22 * scale);
+    ctx.globalAlpha = alpha;
+    ctx.shadowBlur = 24;
+    ctx.fillStyle = slot === 3 ? '#ffff00' : '#ffffff';
+    ctx.shadowColor = slot === 3 ? '#ffff00' : dim.accentColor;
+    ctx.font = 'bold ' + fs + 'px "Share Tech Mono",monospace';
+    ctx.fillText(label, canvas.width / 2, canvas.height * 0.47);
+    ctx.restore();
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// GAME LOOP
+// ══════════════════════════════════════════════════════════
+function loop() {
+  update();
+  draw();
+  animFrame = requestAnimationFrame(loop);
+}
+
+// ══════════════════════════════════════════════════════════
+// END GAME — play burst then show death screen
+// ══════════════════════════════════════════════════════════
+function endGame() {
+  if (!state.running) return;
+  state.running = false;
+  cancelAnimationFrame(animFrame);
+
+  if (state.score > bestScore) bestScore = state.score;
+  finalScoreEl.textContent = state.score;
+  bestScoreEl.textContent = bestScore;
+
+  // Snap bird position and start pop
+  state.pop = {
+    x: state.bird.x + BIRD_W / 2,
+    y: state.bird.y + BIRD_H / 2,
+    frame: 0,
+    maxFrames: 50,
+    color: state.dim.accentColor,
+  };
+
+  // Shake immediately
+  gameArea.classList.remove('shake');
+  void gameArea.offsetWidth;
+  gameArea.classList.add('shake');
+
+  // Animate the burst, then reveal game over
+  function playBurst() {
+    draw();
+    state.pop.frame++;
+    if (state.pop.frame < state.pop.maxFrames) {
+      animFrame = requestAnimationFrame(playBurst);
+    } else {
+      state.pop = null;
+      draw(); // final clean frame
+      // Reset save state for new round
+      scoreSaved = false;
+      saveStatus.textContent = '';
+      saveStatus.className = 'save-status';
+      saveScoreBtn.disabled = false;
+      saveScoreBtn.textContent = 'SAVE SCORE';
+      saveScoreBtn.classList.remove('saved');
+      // Show game over
+      setTimeout(() => {
+        hud.classList.add('hidden');
+        gameOverScreen.classList.add('active');
+      }, 200);
+    }
+  }
+  animFrame = requestAnimationFrame(playBurst);
+}
+
+// ══════════════════════════════════════════════════════════
+// START GAME
+// ══════════════════════════════════════════════════════════
+function startGame() {
+  startScreen.classList.remove('active');
+  gameOverScreen.classList.remove('active');
+  leaderboardScreen.classList.remove('active');
+  hud.classList.remove('hidden');
+  dimDisplay.style.color = DIMENSIONS[0].accentColor;
+  dimDisplay.textContent = 'DIM 1';
+  scoreDisplay.textContent = '0';
+  resetGame();
+  cancelAnimationFrame(animFrame);
+  loop();
+}
+
+// ══════════════════════════════════════════════════════════
+// SAVE SCORE
+// ══════════════════════════════════════════════════════════
+async function handleSaveScore() {
+  if (scoreSaved) return;
+  const name = playerNameInput.value.trim().toUpperCase() || 'ANON';
+  if (name.length === 0) {
+    showSaveStatus('ENTER A NAME FIRST', 'error'); return;
+  }
+  saveScoreBtn.disabled = true;
+  saveScoreBtn.textContent = 'SAVING...';
+  showSaveStatus('', '');
+
+  const ok = await sb.insert({
+    name,
+    score: state.score,
+    max_dimension: state.dimIndex + 1,
+  });
+
+  if (ok) {
+    scoreSaved = true;
+    saveScoreBtn.textContent = 'SAVED ✓';
+    saveScoreBtn.classList.add('saved');
+    showSaveStatus('SCORE SAVED!', 'ok');
+  } else {
+    saveScoreBtn.disabled = false;
+    saveScoreBtn.textContent = 'SAVE SCORE';
+    showSaveStatus('SAVE FAILED — CHECK CONFIG', 'error');
+  }
+}
+
+function showSaveStatus(msg, type) {
+  saveStatus.textContent = msg;
+  saveStatus.className = 'save-status' + (type ? ' ' + type : '');
+}
+
+// ══════════════════════════════════════════════════════════
+// LEADERBOARD
+// ══════════════════════════════════════════════════════════
+async function openLeaderboard() {
+  startScreen.classList.remove('active');
+  gameOverScreen.classList.remove('active');
+  leaderboardScreen.classList.add('active');
+  lbList.innerHTML = '<div class="lb-loading">LOADING...</div>';
+
+  const rows = await sb.topScores(15);
+  if (!rows || rows.length === 0) {
+    lbList.innerHTML = '<div class="lb-empty">NO SCORES YET — BE THE FIRST!</div>';
+    return;
+  }
+
+  lbList.innerHTML = rows.map((r, i) => {
+    const rankClass = i === 0 ? 'top-1' : i === 1 ? 'top-2' : i === 2 ? 'top-3' : '';
+    const medal = i === 0 ? '🥇' : i === 1 ? '🥈' : i === 2 ? '🥉' : (i + 1);
+    return '<div class="lb-row ' + rankClass + '">'
+      + '<span class="lb-rank">' + medal + '</span>'
+      + '<span class="lb-name">' + escapeHtml(r.name) + '</span>'
+      + '<span class="lb-dim">D' + r.max_dimension + '</span>'
+      + '<span class="lb-score">' + r.score + '</span>'
+      + '</div>';
+  }).join('');
+}
+
+function closeLeaderboard() {
+  leaderboardScreen.classList.remove('active');
+  // Go back to wherever we came from
+  if (state.running === false && state.score !== undefined && state.frameCount > 0) {
+    gameOverScreen.classList.add('active');
+  } else {
+    startScreen.classList.add('active');
+  }
+}
+
+function escapeHtml(str) {
+  return String(str)
+    .replace(/&/g, '&amp;').replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ══════════════════════════════════════════════════════════
+// INIT — draw a static frame while on start screen
+// ══════════════════════════════════════════════════════════
+(function init() {
+  resizeCanvas();
+  state = {
+    running: false, bird: { x: 0, y: 0, startY: 0 }, velY: 0, score: 0,
+    dimIndex: 0, dim: DIMENSIONS[0], speed: BASE_SPEED, gravity: BASE_GRAVITY,
+    invertGravity: false, pipes: [], stars: generateStars(),
+    groundOffset: 0, wingPhase: 0, frameCount: 0, hasFlapped: false, pop: null,
+  };
+  draw();
+})();
