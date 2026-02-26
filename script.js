@@ -98,7 +98,7 @@ function showToast(msg, color = '#00ffcc') {
 document.addEventListener('keydown', e => {
   // Only listen for cheat when on start/lobby screen (not mid-game typing)
   const onLobby = startScreen.classList.contains('active') ||
-    leaderboardScreen.classList.contains('active');
+                  leaderboardScreen.classList.contains('active');
   if (!onLobby) { cheatBuffer = ''; return; }
   // Ignore modifier keys and non-character keys
   if (e.key.length !== 1) { cheatBuffer = ''; return; }
@@ -128,7 +128,7 @@ const PIPE_WIDTH = 52;
 const MIN_GAP = 110;    // generous pipe gap
 const PIPE_SPAWN_DIST = 200;    // spacing between pipes
 const PIPE_START_DELAY = 200;    // ~3.3s grace period before pipes
-const SCORE_PER_DIM = 50;
+const SCORE_PER_DIM = 15;
 const BIRD_W = 32;
 const BIRD_H = 26;
 const GROUND_H = 50;
@@ -381,71 +381,51 @@ function drawBird(x, y, wingPhase, dim) {
 // DRAW: BURST / POP EXPLOSION
 // ══════════════════════════════════════════════════════════
 function drawPop(pop) {
-  const t = pop.frame / pop.maxFrames;  // 0 → 1
-  const cx = pop.x, cy = pop.y;
+  const t = pop.frame / pop.maxFrames;
+  const cx = pop.x;
+  const cy = pop.y;
 
   ctx.save();
+  ctx.globalAlpha = 1;
+  ctx.shadowBlur = 0;
 
-  // ── 1. Shockwave ring ──
-  const ringProgress = Math.min(1, t * 1.8);
-  const ringR = ringProgress * 52;
-  const ringA = Math.max(0, 1 - ringProgress * 1.1);
-  ctx.globalAlpha = ringA;
+  // White flash on first 3 frames to mask the bird completely
+  if (pop.frame < 3) {
+    const flashAlpha = 1 - (pop.frame / 3) * 0.7;
+    ctx.globalAlpha = flashAlpha;
+    ctx.fillStyle = '#ffffff';
+    ctx.fillRect(cx - BIRD_W * 1.5, cy - BIRD_H * 1.5, BIRD_W * 3, BIRD_H * 3);
+  }
+
+  // Shockwave ring
+  ctx.globalAlpha = Math.max(0, 1 - t * 2);
+  ctx.beginPath();
+  ctx.arc(cx, cy, t * 80, 0, Math.PI * 2);
   ctx.strokeStyle = pop.color;
   ctx.shadowColor = pop.color;
-  ctx.shadowBlur = 22;
-  ctx.lineWidth = 4 * (1 - ringProgress);
-  ctx.beginPath(); ctx.arc(cx, cy, ringR, 0, Math.PI * 2); ctx.stroke();
+  ctx.shadowBlur = 20;
+  ctx.lineWidth = 3 * (1 - t);
+  ctx.stroke();
 
-  // ── 2. Second outer ring (slightly delayed) ──
-  const ring2p = Math.max(0, t - 0.12) / 0.88;
-  const ring2r = Math.min(1, ring2p * 2) * 70;
-  const ring2a = Math.max(0, 0.6 - ring2p * 0.7);
-  if (ring2a > 0) {
-    ctx.globalAlpha = ring2a;
-    ctx.strokeStyle = '#ffffff';
-    ctx.shadowColor = '#ffffff';
-    ctx.shadowBlur = 10;
-    ctx.lineWidth = 2;
-    ctx.beginPath(); ctx.arc(cx, cy, ring2r, 0, Math.PI * 2); ctx.stroke();
-  }
-
-  // ── 3. Pixel square particles ──
-  const NUM = 16;
-  for (let i = 0; i < NUM; i++) {
-    const angle = (i / NUM) * Math.PI * 2 + (i % 2 === 0 ? 0.1 : -0.1);
-    const delay = (i % 3) * 0.05;
-    const prog = Math.max(0, Math.min(1, (t - delay) / (1 - delay)));
-    if (prog <= 0) continue;
-
-    // Ease out: fast start, decelerate
-    const eased = 1 - Math.pow(1 - prog, 2.5);
-    const dist = eased * (38 + (i % 3) * 14);
-    const px = cx + Math.cos(angle) * dist;
-    const py = cy + Math.sin(angle) * dist;
-    const size = Math.max(1, (1 - prog) * 8);
-    const alpha = Math.max(0, 1 - prog * 1.1);
-
+  // Pixel shards
+  ctx.shadowBlur = 3;
+  for (let i = 0; i < pop.particles.length; i++) {
+    const p = pop.particles[i];
+    if (t < p.delay) continue;
+    const pt = (t - p.delay) / (1 - p.delay);
+    const eased = 1 - Math.pow(1 - Math.min(pt, 1), 2);
+    const px = cx + p.vx * eased;
+    const groundY = canvas.height - GROUND_H;
+    const rawPy = cy + p.vy * eased + p.g * eased * eased;
+    const py = Math.min(rawPy, groundY - 2); // clamp above ground
+    const sz = Math.max(1, p.size * (1 - pt * 0.9));
+    // Fade faster once particle would have gone underground
+    const hitGround = rawPy >= groundY - 2;
+    const alpha = hitGround ? 0 : Math.max(0, 1 - pt);
     ctx.globalAlpha = alpha;
-    ctx.shadowBlur = 6;
-    // Alternate colors: accent, white, secondary accent
-    if (i % 3 === 0) { ctx.fillStyle = pop.color; ctx.shadowColor = pop.color; }
-    else if (i % 3 === 1) { ctx.fillStyle = '#ffffff'; ctx.shadowColor = '#ffffff'; }
-    else { ctx.fillStyle = '#ff3c78'; ctx.shadowColor = '#ff3c78'; }
-
-    ctx.fillRect(Math.round(px - size / 2), Math.round(py - size / 2),
-      Math.round(size), Math.round(size));
-  }
-
-  // ── 4. Central bright flash (only first 30% of animation) ──
-  if (t < 0.3) {
-    const flashA = 1 - (t / 0.3);
-    const flashR = flashA * 16;
-    ctx.globalAlpha = flashA * 0.95;
-    ctx.fillStyle = '#ffffff';
-    ctx.shadowColor = '#ffffff';
-    ctx.shadowBlur = 30;
-    ctx.beginPath(); ctx.arc(cx, cy, flashR, 0, Math.PI * 2); ctx.fill();
+    ctx.fillStyle = p.col;
+    ctx.shadowColor = p.col;
+    ctx.fillRect(Math.round(px - sz * 0.5), Math.round(py - sz * 0.5), Math.ceil(sz), Math.ceil(sz));
   }
 
   ctx.globalAlpha = 1;
@@ -842,12 +822,12 @@ let lastTimestamp = null;
 
 function loop(timestamp) {
   if (lastTimestamp === null) lastTimestamp = timestamp;
-  // dt = how many "60fps frames" worth of time has passed (1.0 = exactly one 60fps frame)
   const rawDt = (timestamp - lastTimestamp) / (1000 / 60);
-  // Clamp: if tab was hidden / paused, don't let dt explode
   const dt = Math.min(rawDt, 3);
   lastTimestamp = timestamp;
   update(dt);
+  // If update() triggered endGame(), stop here — endGame handles its own rendering
+  if (!state.running) return;
   draw();
   animFrame = requestAnimationFrame(loop);
 }
@@ -865,39 +845,128 @@ function endGame() {
   finalScoreEl.textContent = state.score;
   bestScoreEl.textContent = bestScore;
 
-  // Snap bird position and start pop
-  state.pop = {
-    x: state.bird.x + BIRD_W / 2,
-    y: state.bird.y + BIRD_H / 2,
-    frame: 0,
-    maxFrames: 50,
-    color: state.dim.accentColor,
-  };
-
-  // Shake immediately
+  // Shake
   gameArea.classList.remove('shake');
   void gameArea.offsetWidth;
   gameArea.classList.add('shake');
 
-  // Animate the burst, then reveal game over
-  function playBurst(timestamp) {
-    if (lastTimestamp === null) lastTimestamp = timestamp;
-    draw();
-    state.pop.frame++;
-    if (state.pop.frame < state.pop.maxFrames) {
-      animFrame = requestAnimationFrame(playBurst);
+  const bx = state.bird.x + BIRD_W / 2;
+  const by = state.bird.y + BIRD_H / 2;
+  const accentCol = state.dim.accentColor;
+  const groundY = canvas.height - GROUND_H;
+  const palette = [accentCol, '#ffffff', '#ffffff', accentCol, '#ffaa00', '#ff3c78', accentCol];
+
+  // Step 1: Erase bird from main canvas immediately
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  drawBackground(state.dim);
+  const usableH2 = canvas.height - GROUND_H;
+  for (const p of state.pipes) {
+    const yOff = getPipeMoveOffset(p);
+    const gapTop = yOff + p.topH;
+    const gapBot = gapTop + p.gap;
+    drawPipe(p.x, 0, PIPE_WIDTH, gapTop, true, state.dim);
+    drawPipe(p.x, gapBot, PIPE_WIDTH, usableH2 - gapBot, false, state.dim);
+  }
+  drawGround(state.dim);
+
+  // Step 2: Build particles
+  const particles = [];
+  for (let i = 0; i < 80; i++) {
+    const angle = Math.random() * Math.PI * 2;
+    const spd = 40 + Math.random() * 150;
+    particles.push({
+      vx: Math.cos(angle) * spd,
+      vy: Math.sin(angle) * spd - 20,
+      g: 50 + Math.random() * 80,
+      size: 2 + Math.floor(Math.random() * 6),
+      delay: Math.random() * 0.06,
+      col: palette[Math.floor(Math.random() * palette.length)],
+    });
+  }
+
+  // Step 3: Overlay canvas at z-index 999 — visible ABOVE game-over screen (z-index 20)
+  const oc = document.createElement('canvas');
+  oc.width = canvas.width;
+  oc.height = canvas.height;
+  oc.style.cssText = 'position:absolute;top:0;left:0;width:100%;height:100%;z-index:999;pointer-events:none;';
+  gameArea.appendChild(oc);
+  const octx = oc.getContext('2d');
+
+  let burstFrame = 0;
+  const maxFrames = 75;
+
+  function burstLoop() {
+    burstFrame++;
+    const t = burstFrame / maxFrames;
+    octx.clearRect(0, 0, oc.width, oc.height);
+
+    // White flash first 5 frames
+    if (burstFrame <= 5) {
+      octx.globalAlpha = 1 - (burstFrame / 5) * 0.9;
+      octx.fillStyle = '#ffffff';
+      octx.fillRect(bx - BIRD_W * 2, by - BIRD_H * 2, BIRD_W * 4, BIRD_H * 4);
+      octx.globalAlpha = 1;
+    }
+
+    // Shockwave ring
+    octx.save();
+    octx.globalAlpha = Math.max(0, 1 - t * 2);
+    octx.beginPath();
+    octx.arc(bx, by, t * 100, 0, Math.PI * 2);
+    octx.strokeStyle = accentCol;
+    octx.shadowColor = accentCol;
+    octx.shadowBlur = 24;
+    octx.lineWidth = 4 * (1 - t);
+    octx.stroke();
+    octx.restore();
+
+    // Pixel shards
+    octx.save();
+    for (let i = 0; i < particles.length; i++) {
+      const p = particles[i];
+      if (t < p.delay) continue;
+      const pt = Math.min(1, (t - p.delay) / (1 - p.delay));
+      const eased = 1 - Math.pow(1 - pt, 2);
+      const px = bx + p.vx * eased;
+      const rawPy = by + p.vy * eased + p.g * eased * eased;
+      const hitGround = rawPy >= groundY - 2;
+      if (hitGround) continue;
+      const py = rawPy;
+      const sz = Math.max(1, p.size * (1 - pt * 0.85));
+      const alpha = Math.max(0, 1 - pt * 1.1);
+      if (alpha <= 0) continue;
+      octx.globalAlpha = alpha;
+      octx.fillStyle = p.col;
+      octx.shadowColor = p.col;
+      octx.shadowBlur = 4;
+      octx.fillRect(Math.round(px - sz * 0.5), Math.round(py - sz * 0.5), Math.ceil(sz), Math.ceil(sz));
+    }
+    octx.restore();
+
+    // Central glow
+    if (t < 0.3) {
+      const gp = 1 - t / 0.3;
+      octx.save();
+      octx.globalAlpha = gp * 0.9;
+      octx.beginPath();
+      octx.arc(bx, by, gp * 16, 0, Math.PI * 2);
+      octx.fillStyle = '#ffffff';
+      octx.shadowColor = accentCol;
+      octx.shadowBlur = 32;
+      octx.fill();
+      octx.restore();
+    }
+
+    if (burstFrame < maxFrames) {
+      animFrame = requestAnimationFrame(burstLoop);
     } else {
-      state.pop = null;
-      draw(); // final clean frame
-      // Reset save state for new round
+      oc.remove();
       scoreSaved = false;
       saveStatus.textContent = '';
       saveStatus.className = 'save-status';
       saveScoreBtn.disabled = false;
       saveScoreBtn.textContent = 'SAVE SCORE';
       saveScoreBtn.classList.remove('saved');
-
-      // If noclip was used, hide the name/save section and show VOID notice
       const nameEntry = document.getElementById('nameEntry');
       const voidNotice = document.getElementById('voidNotice') || (() => {
         const el = document.createElement('div');
@@ -907,23 +976,13 @@ function endGame() {
         nameEntry.parentNode.insertBefore(el, nameEntry);
         return el;
       })();
-
-      if (cheatNoclip) {
-        nameEntry.style.display = 'none';
-        voidNotice.style.display = 'block';
-      } else {
-        nameEntry.style.display = '';
-        voidNotice.style.display = 'none';
-      }
-
-      // Show game over
-      setTimeout(() => {
-        hud.classList.add('hidden');
-        gameOverScreen.classList.add('active');
-      }, 200);
+      if (cheatNoclip) { nameEntry.style.display = 'none'; voidNotice.style.display = 'block'; }
+      else { nameEntry.style.display = ''; voidNotice.style.display = 'none'; }
+      hud.classList.add('hidden');
+      gameOverScreen.classList.add('active');
     }
   }
-  animFrame = requestAnimationFrame(playBurst);
+  animFrame = requestAnimationFrame(burstLoop);
 }
 
 // ══════════════════════════════════════════════════════════
@@ -1026,12 +1085,17 @@ function escapeHtml(str) {
 // INIT — draw a static frame while on start screen
 // ══════════════════════════════════════════════════════════
 (function init() {
-  resizeCanvas();
-  state = {
-    running: false, bird: { x: 0, y: 0, startY: 0 }, velY: 0, score: 0,
-    dimIndex: 0, dim: DIMENSIONS[0], speed: BASE_SPEED, gravity: BASE_GRAVITY,
-    invertGravity: false, pipes: [], stars: generateStars(),
-    groundOffset: 0, wingPhase: 0, frameCount: 0, hasFlapped: false, pop: null,
-  };
-  draw();
+  // Defer one rAF so the DOM has finished layout and getBoundingClientRect() returns real sizes
+  requestAnimationFrame(() => {
+    resizeCanvas();
+    const bx = canvas.width * 0.22;
+    const by = canvas.height * 0.42;
+    state = {
+      running: false, bird: { x: bx, y: by, startY: by }, velY: 0, score: 0,
+      dimIndex: 0, dim: DIMENSIONS[0], speed: BASE_SPEED, gravity: BASE_GRAVITY,
+      invertGravity: false, pipes: [], stars: generateStars(),
+      groundOffset: 0, wingPhase: 0, frameCount: 0, hasFlapped: false, pop: null,
+    };
+    draw();
+  });
 })();
