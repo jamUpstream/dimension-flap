@@ -50,12 +50,22 @@ const saveScoreBtn = document.getElementById('saveScoreBtn');
 const saveStatus = document.getElementById('saveStatus');
 const lbList = document.getElementById('lbList');
 
+const optionsScreen = document.getElementById('optionsScreen');
+const sfxToggleBtn = document.getElementById('sfxToggle');
+const lowSpecToggleBtn = document.getElementById('lowSpecToggle');
+const hellToggleBtn = document.getElementById('hellToggle');
+
 document.getElementById('startBtn').addEventListener('click', startGame);
 document.getElementById('restartBtn').addEventListener('click', startGame);
 document.getElementById('leaderboardBtn').addEventListener('click', openLeaderboard);
-document.getElementById('goLeaderboardBtn').addEventListener('click', openLeaderboard);
 document.getElementById('lbCloseBtn').addEventListener('click', closeLeaderboard);
 saveScoreBtn.addEventListener('click', handleSaveScore);
+document.getElementById('optionsBtn').addEventListener('click', openOptions);
+document.getElementById('optionsCloseBtn').addEventListener('click', closeOptions);
+document.getElementById('goMenuBtn').addEventListener('click', goToMenu);
+sfxToggleBtn.addEventListener('click', () => toggleOption('sfx'));
+lowSpecToggleBtn.addEventListener('click', () => toggleOption('lowSpec'));
+hellToggleBtn.addEventListener('click', () => toggleOption('hell'));
 
 // ══════════════════════════════════════════════════════════
 // CHEAT CODE — type "jamwassogreat" on start/lobby screen
@@ -125,26 +135,13 @@ const BASE_FLAP = -6.8;   // snappier upward kick
 const MAX_FALL_SPEED = 15;      // allow slightly faster falling
 const BASE_SPEED = 2.4;    // faster scroll speed
 const PIPE_WIDTH = 52;
-const MIN_GAP = 110;    // generous pipe gap
-const PIPE_SPAWN_DIST = 150;    // spacing between pipes
+const MIN_GAP = 80;    // generous pipe gap
+const PIPE_SPAWN_DIST = 170;    // spacing between pipes
 const PIPE_START_DELAY = 200;    // ~3.3s grace period before pipes
-const SCORE_PER_DIM = 50; // score needed to shift to next dimension
+const SCORE_PER_DIM = 50; // score needed to advance to next dimension
 const BIRD_W = 32;
 const BIRD_H = 26;
 const GROUND_H = 50;
-
-// const BASE_GRAVITY = 0.30;   // slightly punchier gravity
-// const BASE_FLAP = -6.8;   // snappier upward kick
-// const MAX_FALL_SPEED = 15;      // allow slightly faster falling
-// const BASE_SPEED = 2.4;    // faster scroll speed
-// const PIPE_WIDTH = 52;
-// const MIN_GAP = 110;    // generous pipe gap
-// const PIPE_SPAWN_DIST = 200;    // spacing between pipes
-// const PIPE_START_DELAY = 200;    // ~3.3s grace period before pipes
-// const SCORE_PER_DIM = 50; // score needed to shift to next dimension
-// const BIRD_W = 32;
-// const BIRD_H = 26;
-// const GROUND_H = 50;
 
 // ══════════════════════════════════════════════════════════
 // SFX  — Web Audio API, zero assets needed
@@ -215,21 +212,25 @@ const SFX = (() => {
 
   return {
     flap() {
+      if (sfxMuted) return;
       // Short airy whoosh — sine sweep up
       play({ type: 'sine', freq: 280, freqEnd: 520, dur: 0.12, vol: 0.14, attack: 0.003 });
       play({ type: 'triangle', freq: 180, freqEnd: 360, dur: 0.1, vol: 0.07, attack: 0.003 });
     },
     score() {
+      if (sfxMuted) return;
       // Quick upward blip
       play({ type: 'square', freq: 660, freqEnd: 880, dur: 0.1, vol: 0.12, attack: 0.003 });
     },
     die() {
+      if (sfxMuted) return;
       // Low crunch + noise burst
       play({ type: 'sawtooth', freq: 220, freqEnd: 55, dur: 0.4, vol: 0.22, attack: 0.005 });
       play({ type: 'square', freq: 110, freqEnd: 40, dur: 0.5, vol: 0.15, attack: 0.005 });
       playNoise({ dur: 0.25, vol: 0.18, filterFreq: 600 });
     },
     dimShift() {
+      if (sfxMuted) return;
       // Sci-fi arpeggio sweep
       const notes = [330, 440, 550, 660, 880];
       notes.forEach((f, i) => {
@@ -238,6 +239,7 @@ const SFX = (() => {
       play({ type: 'sine', freq: 110, freqEnd: 440, dur: 0.35, vol: 0.09, attack: 0.01 });
     },
     countdown(n) {
+      if (sfxMuted) return;
       // Tick for 3/2/1, higher + longer for GO
       if (n === 0) {
         play({ type: 'square', freq: 880, freqEnd: 1100, dur: 0.22, vol: 0.16, attack: 0.003 });
@@ -324,6 +326,21 @@ const DIMENSIONS = [
 ];
 
 // ══════════════════════════════════════════════════════════
+// HELL DIMENSION
+// ══════════════════════════════════════════════════════════
+const HELL_DIM = {
+  id: "hell", name: "HELL",
+  bgTop: "#0d0000", bgBot: "#1a0000",
+  pipeColor: "#ff1a00", pipeGlow: "#ff4400", groundColor: "#0f0000", accentColor: "#ff3c14",
+  gravMult: 1.45, speedMult: 2.1, gapMod: -28,
+  pipesMove: true, pipeMoveAmp: 60, pipeMoveSpeed: 0.035,
+  invertGravity: false, glitch: true,
+};
+const HELL_PIPE_SPAWN_DIST = 130;
+const HELL_MIN_GAP = 82;
+const HELL_PIPE_START_DELAY = 0;
+
+// ══════════════════════════════════════════════════════════
 // GAME STATE
 // ══════════════════════════════════════════════════════════
 let state = {};
@@ -331,10 +348,20 @@ let animFrame;
 let bestScore = 0;
 let glitchTimer = 0;
 let scoreSaved = false;  // track if score was already saved this round
+let sfxMuted = false;  // Options: SFX toggle
+let lowSpec = false;  // Options: low-spec mode (no glow / shadows)
+let hellMode = false;  // Options: Hell Mode
 
 // ══════════════════════════════════════════════════════════
 // HELPERS
 // ══════════════════════════════════════════════════════════
+// Low-spec helper: skip expensive shadow when lowSpec mode is on
+function applyShadow(context, blur, color) {
+  if (lowSpec) { context.shadowBlur = 0; return; }
+  context.shadowBlur = blur;
+  context.shadowColor = color;
+}
+
 function roundRect(ctx, x, y, w, h, r) {
   ctx.beginPath();
   ctx.moveTo(x + r, y); ctx.lineTo(x + w - r, y);
@@ -375,7 +402,7 @@ function drawBird(x, y, wingPhase, dim) {
   if (state.invertGravity) ctx.scale(1, -1);
   ctx.translate(-cx, -cy);
   const wingDrop = Math.sin(wingPhase) * 5;
-  ctx.shadowColor = dim.accentColor; ctx.shadowBlur = 10;
+  applyShadow(ctx, 10, dim.accentColor);
   ctx.fillStyle = dim.accentColor;
   roundRect(ctx, x + 4, y + 5, w - 8, h - 9, 4); ctx.fill();
   ctx.fillStyle = shadeColor(dim.accentColor, -40);
@@ -402,12 +429,21 @@ function drawPop(pop) {
   ctx.globalAlpha = 1;
   ctx.shadowBlur = 0;
 
-  // White flash on first 3 frames to mask the bird completely
+  // Radial flash bloom on first 3 frames — no hard rectangular edges
   if (pop.frame < 3) {
     const flashAlpha = 1 - (pop.frame / 3) * 0.7;
-    ctx.globalAlpha = flashAlpha;
-    ctx.fillStyle = '#ffffff';
-    ctx.fillRect(cx - BIRD_W * 1.5, cy - BIRD_H * 1.5, BIRD_W * 3, BIRD_H * 3);
+    const flashRadius = BIRD_W * 2 + pop.frame * 8;
+    const flashGrad = ctx.createRadialGradient(cx, cy, 0, cx, cy, flashRadius);
+    flashGrad.addColorStop(0, `rgba(255,255,255,${flashAlpha})`);
+    flashGrad.addColorStop(0.4, `rgba(255,255,255,${flashAlpha * 0.5})`);
+    flashGrad.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.save();
+    ctx.globalAlpha = 1;
+    ctx.fillStyle = flashGrad;
+    ctx.beginPath();
+    ctx.arc(cx, cy, flashRadius, 0, Math.PI * 2);
+    ctx.fill();
+    ctx.restore();
   }
 
   // Shockwave ring
@@ -453,7 +489,7 @@ function drawPipe(x, y, w, h, isTop, dim) {
   if (h <= 0) return;
   const capH = 16, capW = w + 10;
   ctx.save();
-  ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 16;
+  applyShadow(ctx, 16, dim.pipeGlow);
   const grad = ctx.createLinearGradient(x, 0, x + w, 0);
   grad.addColorStop(0, shadeColor(dim.pipeColor, -60));
   grad.addColorStop(0.3, dim.pipeColor);
@@ -477,7 +513,7 @@ function drawBackground(dim) {
   grad.addColorStop(0, dim.bgTop); grad.addColorStop(1, dim.bgBot);
   ctx.fillStyle = grad; ctx.fillRect(0, 0, canvas.width, canvas.height);
   drawStars(dim);
-  if (dim.glitch && glitchTimer > 0) {
+  if (!lowSpec && dim.glitch && glitchTimer > 0) {
     ctx.fillStyle = 'rgba(255,255,255,' + (0.04 + Math.random() * 0.04) + ')';
     ctx.fillRect(0, Math.random() * canvas.height, canvas.width, 2 + Math.random() * 3);
   }
@@ -491,7 +527,7 @@ function drawStars(dim) {
     ctx.globalAlpha = s.alpha;
     ctx.fillStyle = dim.accentColor;
     ctx.shadowColor = dim.accentColor;
-    ctx.shadowBlur = s.big ? 5 : 0;
+    ctx.shadowBlur = (lowSpec || !s.big) ? 0 : 5;
     ctx.fillRect(Math.round(s.x), Math.round(s.y), s.big ? 2 : 1, s.big ? 2 : 1);
   }
   ctx.globalAlpha = 1; ctx.shadowBlur = 0;
@@ -505,7 +541,7 @@ function drawGround(dim) {
   const gy = canvas.height - GROUND_H;
   ctx.fillStyle = dim.groundColor; ctx.fillRect(0, gy, canvas.width, GROUND_H);
   ctx.strokeStyle = dim.pipeColor; ctx.lineWidth = 2;
-  ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 8;
+  applyShadow(ctx, 8, dim.pipeGlow);
   ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
   ctx.shadowBlur = 0;
   ctx.fillStyle = shadeColor(dim.groundColor, 12);
@@ -528,7 +564,8 @@ function getPipeMoveOffset(p) {
 }
 
 function spawnPipe() {
-  const gap = Math.max(MIN_GAP, MIN_GAP + Math.max(0, 50 - state.score * 1.2) + state.dim.gapMod);
+  const _activeMinGap = hellMode ? HELL_MIN_GAP : MIN_GAP;
+  const gap = Math.max(_activeMinGap, _activeMinGap + Math.max(0, 50 - state.score * 1.2) + state.dim.gapMod);
   const usableH = canvas.height - GROUND_H;
   const minTopH = 55, maxTopH = usableH - gap - 55;
 
@@ -550,8 +587,9 @@ function spawnPipe() {
 // ══════════════════════════════════════════════════════════
 function onFlap() {
   if (!state.running) return;
-  // Block ALL input during the countdown
-  if (state.frameCount < PIPE_START_DELAY) return;
+  // Block input during the countdown (respects hellMode grace period = 0)
+  const _flapDelay = hellMode ? HELL_PIPE_START_DELAY : PIPE_START_DELAY;
+  if (_flapDelay > 0 && state.frameCount < _flapDelay) return;
   state.hasFlapped = true;
   state.velY = state.invertGravity ? Math.abs(BASE_FLAP) : BASE_FLAP;
   state.wingPhase = 0;
@@ -618,15 +656,16 @@ function resetGame() {
   resizeCanvas();
   const bx = canvas.width * 0.22;
   const by = canvas.height * 0.42;
+  const _hStartDim = hellMode ? HELL_DIM : DIMENSIONS[0];
   state = {
     running: true,
     bird: { x: bx, y: by, startY: by },
     velY: 0,
     score: 0,
     dimIndex: 0,
-    dim: DIMENSIONS[0],
-    speed: BASE_SPEED,
-    gravity: BASE_GRAVITY,
+    dim: _hStartDim,
+    speed: BASE_SPEED * _hStartDim.speedMult,
+    gravity: BASE_GRAVITY * _hStartDim.gravMult,
     invertGravity: false,
     pipes: [],
     stars: generateStars(),
@@ -636,6 +675,13 @@ function resetGame() {
     hasFlapped: false,
     pop: null,
   };
+  if (hellMode) {
+    dimDisplay.classList.add("hell-mode");
+    dimDisplay.textContent = "⛧ HELL";
+    dimDisplay.style.color = HELL_DIM.accentColor;
+  } else {
+    dimDisplay.classList.remove("hell-mode");
+  }
   scoreSaved = false;
   lastRandomDimIdx = -1;
 }
@@ -728,10 +774,11 @@ function update(dt = 1) {
   if (!state.running) return;
 
   // Countdown tick SFX — fire once per slot change
-  if (state.frameCount < PIPE_START_DELAY) {
-    const prevSlot = Math.min(3, Math.floor(state.frameCount / (PIPE_START_DELAY / 4)));
-    const nextSlot = Math.min(3, Math.floor((state.frameCount + dt) / (PIPE_START_DELAY / 4)));
-    if (nextSlot > prevSlot) SFX.countdown(3 - nextSlot); // 3→2→1→GO (0)
+  const _activeStartDelay = hellMode ? HELL_PIPE_START_DELAY : PIPE_START_DELAY;
+  if (_activeStartDelay > 0 && state.frameCount < _activeStartDelay) {
+    const prevSlot = Math.min(3, Math.floor(state.frameCount / (_activeStartDelay / 4)));
+    const nextSlot = Math.min(3, Math.floor((state.frameCount + dt) / (_activeStartDelay / 4)));
+    if (nextSlot > prevSlot) SFX.countdown(3 - nextSlot);
   }
 
   state.frameCount += dt;
@@ -753,7 +800,7 @@ function update(dt = 1) {
   state.wingPhase += 0.2 * dt;
   state.groundOffset += state.speed * dt;
 
-  const inGrace = state.frameCount < PIPE_START_DELAY;
+  const inGrace = _activeStartDelay > 0 && state.frameCount < _activeStartDelay;
   if (!inGrace) {
     for (const p of state.pipes) {
       p.x -= state.speed * dt;
@@ -768,7 +815,8 @@ function update(dt = 1) {
     }
     state.pipes = state.pipes.filter(p => p.x + PIPE_WIDTH + 10 > 0);
     const lastPipe = state.pipes[state.pipes.length - 1];
-    if (!lastPipe || lastPipe.x < canvas.width - PIPE_SPAWN_DIST) spawnPipe();
+    const _activeSpawnDist = hellMode ? HELL_PIPE_SPAWN_DIST : PIPE_SPAWN_DIST;
+    if (!lastPipe || lastPipe.x < canvas.width - _activeSpawnDist) spawnPipe();
   }
 
   if (checkCollisions(inGrace)) endGame();
@@ -803,6 +851,19 @@ function draw() {
     drawBird(state.bird.x, state.bird.y, state.wingPhase, dim);
   }
 
+  // Hell Mode watermark
+  if (hellMode && state.running) {
+    ctx.save();
+    ctx.font = '9px "Share Tech Mono",monospace';
+    ctx.fillStyle = "#ff3c14";
+    ctx.shadowColor = "#ff3c14";
+    ctx.shadowBlur = lowSpec ? 0 : 10;
+    ctx.globalAlpha = 0.55 + Math.sin(Date.now() * 0.008) * 0.25;
+    ctx.textAlign = "center";
+    ctx.fillText("⛧ HELL MODE", canvas.width / 2, canvas.height - GROUND_H - 8);
+    ctx.restore();
+  }
+
   // Noclip indicator
   if (cheatNoclip) {
     ctx.save();
@@ -817,9 +878,10 @@ function draw() {
   }
 
   // Countdown overlay
-  if (state.frameCount < PIPE_START_DELAY) {
+  const _drawDelay = hellMode ? HELL_PIPE_START_DELAY : PIPE_START_DELAY;
+  if (_drawDelay > 0 && state.frameCount < _drawDelay) {
     const f = state.frameCount;
-    const total = PIPE_START_DELAY;
+    const total = _drawDelay;
     const slot = Math.min(3, Math.floor(f / (total / 4)));
     const slotProg = (f % (total / 4)) / (total / 4);
     const labels = ['3', '2', '1', 'GO!'];
@@ -943,12 +1005,21 @@ function endGame() {
     const t = burstFrame / maxFrames;
     octx.clearRect(0, 0, oc.width, oc.height);
 
-    // White flash first 5 frames
+    // Radial flash bloom first 5 frames — no hard rectangular edges
     if (burstFrame <= 5) {
-      octx.globalAlpha = 1 - (burstFrame / 5) * 0.9;
-      octx.fillStyle = '#ffffff';
-      octx.fillRect(bx - BIRD_W * 2, by - BIRD_H * 2, BIRD_W * 4, BIRD_H * 4);
+      const flashAlpha = 1 - (burstFrame / 5) * 0.9;
+      const flashRadius = BIRD_W * 2.5 + burstFrame * 6;
+      const flashGrad = octx.createRadialGradient(bx, by, 0, bx, by, flashRadius);
+      flashGrad.addColorStop(0, `rgba(255,255,255,${flashAlpha})`);
+      flashGrad.addColorStop(0.4, `rgba(255,255,255,${flashAlpha * 0.6})`);
+      flashGrad.addColorStop(1, 'rgba(255,255,255,0)');
+      octx.save();
       octx.globalAlpha = 1;
+      octx.fillStyle = flashGrad;
+      octx.beginPath();
+      octx.arc(bx, by, flashRadius, 0, Math.PI * 2);
+      octx.fill();
+      octx.restore();
     }
 
     // Shockwave ring
@@ -957,8 +1028,7 @@ function endGame() {
     octx.beginPath();
     octx.arc(bx, by, t * 100, 0, Math.PI * 2);
     octx.strokeStyle = accentCol;
-    octx.shadowColor = accentCol;
-    octx.shadowBlur = 24;
+    if (!lowSpec) { octx.shadowColor = accentCol; octx.shadowBlur = 24; } else { octx.shadowBlur = 0; }
     octx.lineWidth = 4 * (1 - t);
     octx.stroke();
     octx.restore();
@@ -980,8 +1050,7 @@ function endGame() {
       if (alpha <= 0) continue;
       octx.globalAlpha = alpha;
       octx.fillStyle = p.col;
-      octx.shadowColor = p.col;
-      octx.shadowBlur = 4;
+      if (!lowSpec) { octx.shadowColor = p.col; octx.shadowBlur = 4; } else { octx.shadowBlur = 0; }
       octx.fillRect(Math.round(px - sz * 0.5), Math.round(py - sz * 0.5), Math.ceil(sz), Math.ceil(sz));
     }
     octx.restore();
@@ -1015,11 +1084,12 @@ function endGame() {
         const el = document.createElement('div');
         el.id = 'voidNotice';
         el.style.cssText = 'font-size:0.7rem;letter-spacing:2px;color:#ff3c78;text-align:center;padding:6px 0;border:1px solid #ff3c7855;background:rgba(255,60,120,0.07);width:100%;';
-        el.textContent = '⚡ NOCLIP USED — SCORE VOIDED';
         nameEntry.parentNode.insertBefore(el, nameEntry);
         return el;
       })();
-      if (cheatNoclip) { nameEntry.style.display = 'none'; voidNotice.style.display = 'block'; }
+      const _isVoided = cheatNoclip || hellMode;
+      voidNotice.textContent = hellMode ? '⛧ HELL MODE — SCORE VOIDED' : '⚡ NOCLIP USED — SCORE VOIDED';
+      if (_isVoided) { nameEntry.style.display = 'none'; voidNotice.style.display = 'block'; }
       else { nameEntry.style.display = ''; voidNotice.style.display = 'none'; }
       hud.classList.add('hidden');
       gameOverScreen.classList.add('active');
@@ -1035,11 +1105,17 @@ function startGame() {
   startScreen.classList.remove('active');
   gameOverScreen.classList.remove('active');
   leaderboardScreen.classList.remove('active');
+  optionsScreen.classList.remove('active');
   hud.classList.remove('hidden');
-  dimDisplay.style.color = DIMENSIONS[0].accentColor;
-  dimDisplay.textContent = 'DIM 1';
   scoreDisplay.textContent = '0';
+  // resetGame sets state.dim correctly for hellMode — read HUD from there after
   resetGame();
+  // HUD sync: resetGame already sets dimDisplay for hell, but fix normal case too
+  if (!hellMode) {
+    dimDisplay.classList.remove('hell-mode');
+    dimDisplay.style.color = DIMENSIONS[0].accentColor;
+    dimDisplay.textContent = 'DIM 1';
+  }
   cancelAnimationFrame(animFrame);
   lastTimestamp = null;
   animFrame = requestAnimationFrame(loop);
@@ -1122,6 +1198,135 @@ function escapeHtml(str) {
   return String(str)
     .replace(/&/g, '&amp;').replace(/</g, '&lt;')
     .replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+// ══════════════════════════════════════════════════════════
+// HELL MODE LIVE APPLY
+// ══════════════════════════════════════════════════════════
+function applyHellModeToRunningGame() {
+  if (hellMode) {
+    state.dim = HELL_DIM;
+    state.speed = BASE_SPEED * HELL_DIM.speedMult;
+    state.gravity = BASE_GRAVITY * HELL_DIM.gravMult;
+    state.invertGravity = false;
+    state.velY = 0;
+    state.pipes = [];
+    dimBannerText.textContent = "⛧ HELL MODE ACTIVATED";
+    dimBanner.classList.remove("show");
+    void dimBanner.offsetWidth;
+    dimBanner.style.color = HELL_DIM.accentColor;
+    dimBanner.style.borderColor = HELL_DIM.accentColor;
+    dimBanner.style.textShadow = "0 0 20px " + HELL_DIM.accentColor;
+    dimBanner.classList.add("show");
+    gameArea.classList.remove("shake", "glitch-flash");
+    void gameArea.offsetWidth;
+    gameArea.classList.add("shake");
+    setTimeout(() => gameArea.classList.add("glitch-flash"), 80);
+    setTimeout(() => gameArea.classList.remove("shake", "glitch-flash"), 500);
+    SFX.dimShift();
+    dimDisplay.classList.add("hell-mode");
+    dimDisplay.textContent = "⛧ HELL";
+    dimDisplay.style.color = HELL_DIM.accentColor;
+  } else {
+    const d = state.dimIndex < DIMENSIONS.length ? DIMENSIONS[state.dimIndex] : DIMENSIONS[DIMENSIONS.length - 1];
+    state.dim = d;
+    state.speed = BASE_SPEED * d.speedMult;
+    state.gravity = BASE_GRAVITY * Math.abs(d.gravMult);
+    state.invertGravity = d.invertGravity;
+    state.pipes = [];
+    dimBannerText.textContent = "DIM " + d.id + ": " + d.name;
+    dimBanner.classList.remove("show");
+    void dimBanner.offsetWidth;
+    dimBanner.style.color = d.accentColor;
+    dimBanner.style.borderColor = d.accentColor;
+    dimBanner.style.textShadow = "0 0 20px " + d.accentColor;
+    dimBanner.classList.add("show");
+    SFX.dimShift();
+    dimDisplay.classList.remove("hell-mode");
+    dimDisplay.textContent = "DIM " + d.id;
+    dimDisplay.style.color = d.accentColor;
+  }
+}
+
+// ══════════════════════════════════════════════════════════
+// OPTIONS
+// ══════════════════════════════════════════════════════════
+let _optionsCaller = 'start'; // 'start' | 'gameover'
+
+function openOptions() {
+  _optionsCaller = startScreen.classList.contains('active') ? 'start' : 'gameover';
+  startScreen.classList.remove('active');
+  gameOverScreen.classList.remove('active');
+  optionsScreen.classList.add('active');
+}
+
+function closeOptions() {
+  optionsScreen.classList.remove('active');
+  if (_optionsCaller === 'gameover') {
+    gameOverScreen.classList.add('active');
+  } else {
+    startScreen.classList.add('active');
+  }
+}
+
+function goToMenu() {
+  gameOverScreen.classList.remove('active');
+  leaderboardScreen.classList.remove('active');
+  optionsScreen.classList.remove('active');
+  // Cancel any running loop / burst animation
+  cancelAnimationFrame(animFrame);
+  // Reset state to a clean idle frame (not running)
+  resizeCanvas();
+  const _mx = canvas.width * 0.22;
+  const _my = canvas.height * 0.42;
+  const _menuDim = hellMode ? HELL_DIM : DIMENSIONS[0];
+  state = {
+    running: false,
+    bird: { x: _mx, y: _my, startY: _my },
+    velY: 0, score: 0,
+    dimIndex: 0, dim: _menuDim,
+    speed: BASE_SPEED * _menuDim.speedMult,
+    gravity: BASE_GRAVITY * _menuDim.gravMult,
+    invertGravity: false, pipes: [],
+    stars: generateStars(),
+    groundOffset: 0, wingPhase: 0, frameCount: 0,
+    hasFlapped: false, pop: null,
+  };
+  hud.classList.add('hidden');
+  // Remove any leftover overlay canvases from burst animation
+  document.querySelectorAll('#gameArea canvas:not(#gameCanvas)').forEach(c => c.remove());
+  draw(); // single clean static frame
+  startScreen.classList.add('active');
+}
+
+function toggleOption(which) {
+  if (which === 'sfx') {
+    sfxMuted = !sfxMuted;
+    sfxToggleBtn.classList.toggle('active', !sfxMuted);
+    sfxToggleBtn.setAttribute('aria-pressed', String(!sfxMuted));
+    sfxToggleBtn.querySelector('.toggle-state').textContent = sfxMuted ? 'OFF' : 'ON';
+  } else if (which === 'lowSpec') {
+    lowSpec = !lowSpec;
+    lowSpecToggleBtn.classList.toggle('active', lowSpec);
+    lowSpecToggleBtn.setAttribute('aria-pressed', String(lowSpec));
+    lowSpecToggleBtn.querySelector('.toggle-state').textContent = lowSpec ? 'ON' : 'OFF';
+    // Toggle scanlines CSS (expensive repeating-gradient) off in low-spec
+    document.getElementById('gameArea').classList.toggle('low-spec', lowSpec);
+  } else if (which === 'hell') {
+    hellMode = !hellMode;
+    hellToggleBtn.classList.toggle('active', hellMode);
+    hellToggleBtn.setAttribute('aria-pressed', String(hellMode));
+    hellToggleBtn.querySelector('.toggle-state').textContent = hellMode ? 'ON' : 'OFF';
+    if (state.running) {
+      applyHellModeToRunningGame();
+    } else {
+      // Not in-game: update the idle canvas so the background reflects hell colours
+      const _idleDim = hellMode ? HELL_DIM : DIMENSIONS[0];
+      state.dim = _idleDim;
+      // Update start screen background via a single draw pass
+      draw();
+    }
+  }
 }
 
 // ══════════════════════════════════════════════════════════

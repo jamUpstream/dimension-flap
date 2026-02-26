@@ -60,6 +60,7 @@
           </div>
           <button id="startBtn"       class="btn btn-primary">ENTER VOID</button>
           <button id="leaderboardBtn" class="btn btn-ghost">LEADERBOARD</button>
+          <button id="optionsBtn"     class="btn btn-ghost">OPTIONS</button>
         </div>
       </div>
 
@@ -90,8 +91,8 @@
           </div>
 
           <div class="btn-row">
-            <button id="restartBtn"       class="btn btn-primary">RETRY</button>
-            <button id="goLeaderboardBtn" class="btn btn-ghost">LEADERBOARD</button>
+            <button id="restartBtn" class="btn btn-primary">RETRY</button>
+            <button id="goMenuBtn"  class="btn btn-ghost">MENU</button>
           </div>
         </div>
       </div>
@@ -104,6 +105,48 @@
             <div class="lb-loading">LOADING...</div>
           </div>
           <button id="lbCloseBtn" class="btn btn-ghost">BACK</button>
+        </div>
+      </div>
+
+
+      <!-- ── OPTIONS SCREEN ── -->
+      <div id="optionsScreen" class="screen">
+        <div class="screen-content">
+          <h2 class="lb-title">◈ OPTIONS ◈</h2>
+
+          <div class="options-list">
+
+            <div class="option-row">
+              <span class="option-label">SFX</span>
+              <button id="sfxToggle" class="toggle-btn active" aria-pressed="true">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-state">ON</span>
+              </button>
+            </div>
+
+            <div class="option-row">
+              <span class="option-label">LOW SPEC MODE</span>
+              <button id="lowSpecToggle" class="toggle-btn" aria-pressed="false">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-state">OFF</span>
+              </button>
+            </div>
+
+            <div class="option-row option-row-hell">
+              <div class="option-label-group">
+                <span class="option-label hell-label">⛧ HELL MODE</span>
+                <span class="option-sublabel">Max difficulty — immediately</span>
+              </div>
+              <button id="hellToggle" class="toggle-btn toggle-btn-hell" aria-pressed="false">
+                <span class="toggle-track"><span class="toggle-thumb"></span></span>
+                <span class="toggle-state">OFF</span>
+              </button>
+            </div>
+
+          </div>
+
+          <p class="option-hint">Low Spec disables glow effects &amp; particles<br>Hell Mode voids leaderboard saves</p>
+          <button id="optionsCloseBtn" class="btn btn-ghost">BACK</button>
         </div>
       </div>
 
