@@ -32,28 +32,8 @@ const sb = {
 // CANVAS & DOM
 // ══════════════════════════════════════════════════════════
 const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d', { alpha: false }); // alpha:false = faster compositing
+const ctx = canvas.getContext('2d');
 const gameArea = document.getElementById('gameArea');
-
-// ── Mobile detection & performance tier ──────────────────
-const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
-  || ('ontouchstart' in window && window.innerWidth < 900);
-
-// On mobile: disable expensive effects
-const FX = {
-  shadows:    !IS_MOBILE,   // ctx.shadowBlur costs GPU fill rate
-  pipeStripes:!IS_MOBILE,   // per-pixel stripe loop
-  pipeGrad:   !IS_MOBILE,   // linear gradient per pipe
-  bgGlows:    !IS_MOBILE,   // CSS animated blur glows
-  starGlow:   !IS_MOBILE,   // star shadowBlur
-  starCount:  IS_MOBILE ? 30 : 60,
-};
-
-// Hide expensive CSS background glows on mobile
-if (!FX.bgGlows) {
-  const el = document.querySelector('.page-bg');
-  if (el) el.style.display = 'none';
-}
 
 const startScreen = document.getElementById('startScreen');
 const gameOverScreen = document.getElementById('gameOverScreen');
@@ -80,18 +60,121 @@ saveScoreBtn.addEventListener('click', handleSaveScore);
 // ══════════════════════════════════════════════════════════
 // CONSTANTS
 // ══════════════════════════════════════════════════════════
-const BASE_GRAVITY = 0.16;   // very gentle gravity
-const BASE_FLAP = -5.2;   // solid upward kick per flap
-const MAX_FALL_SPEED = 5;      // strict fall cap — no plummeting
-const BASE_SPEED = 1.8;    // comfortable scroll speed
+const BASE_GRAVITY = 0.30;   // slightly punchier gravity
+const BASE_FLAP = -6.8;   // snappier upward kick
+const MAX_FALL_SPEED = 15;      // allow slightly faster falling
+const BASE_SPEED = 2.4;    // faster scroll speed
 const PIPE_WIDTH = 52;
-const MIN_GAP = 160;    // generous pipe gap
-const PIPE_SPAWN_DIST = 340;    // spacing between pipes
+const MIN_GAP = 110;    // generous pipe gap
+const PIPE_SPAWN_DIST = 200;    // spacing between pipes
 const PIPE_START_DELAY = 200;    // ~3.3s grace period before pipes
-const SCORE_PER_DIM = 8;
+const SCORE_PER_DIM = 15;
 const BIRD_W = 32;
 const BIRD_H = 26;
 const GROUND_H = 50;
+
+// ══════════════════════════════════════════════════════════
+// SFX  — Web Audio API, zero assets needed
+// ══════════════════════════════════════════════════════════
+const SFX = (() => {
+  let ctx;
+  function getCtx() {
+    if (!ctx) ctx = new (window.AudioContext || window.webkitAudioContext)();
+    if (ctx.state === 'suspended') ctx.resume();
+    return ctx;
+  }
+
+  // Generic synth helper
+  function play({ type = 'square', freq, freqEnd, dur, vol = 0.18, attack = 0.005, decay = 0, sustain = 1, release, detune = 0, filter, filterEnd }) {
+    try {
+      const c = getCtx();
+      const osc = c.createOscillator();
+      const gain = c.createGain();
+      const now = c.currentTime;
+      const totalRelease = release ?? dur * 0.4;
+
+      osc.type = type;
+      osc.frequency.setValueAtTime(freq, now);
+      if (freqEnd !== undefined) osc.frequency.exponentialRampToValueAtTime(freqEnd, now + dur);
+      if (detune) osc.detune.setValueAtTime(detune, now);
+
+      gain.gain.setValueAtTime(0, now);
+      gain.gain.linearRampToValueAtTime(vol, now + attack);
+      if (decay > 0) gain.gain.linearRampToValueAtTime(vol * sustain, now + attack + decay);
+      gain.gain.setValueAtTime(vol * sustain, now + dur - totalRelease);
+      gain.gain.linearRampToValueAtTime(0, now + dur);
+
+      if (filter) {
+        const bq = c.createBiquadFilter();
+        bq.type = filter;
+        bq.frequency.setValueAtTime(filterEnd ?? 2000, now);
+        if (filterEnd) bq.frequency.exponentialRampToValueAtTime(filterEnd, now + dur);
+        osc.connect(bq); bq.connect(gain);
+      } else {
+        osc.connect(gain);
+      }
+      gain.connect(c.destination);
+      osc.start(now);
+      osc.stop(now + dur);
+    } catch (e) { /* silently ignore if audio not available */ }
+  }
+
+  // Noise burst for explosions
+  function playNoise({ dur = 0.15, vol = 0.12, filter = 'bandpass', filterFreq = 400 }) {
+    try {
+      const c = getCtx();
+      const bufSize = c.sampleRate * dur;
+      const buf = c.createBuffer(1, bufSize, c.sampleRate);
+      const data = buf.getChannelData(0);
+      for (let i = 0; i < bufSize; i++) data[i] = Math.random() * 2 - 1;
+      const src = c.createBufferSource();
+      src.buffer = buf;
+      const bq = c.createBiquadFilter();
+      bq.type = filter;
+      bq.frequency.setValueAtTime(filterFreq, c.currentTime);
+      const gain = c.createGain();
+      gain.gain.setValueAtTime(vol, c.currentTime);
+      gain.gain.linearRampToValueAtTime(0, c.currentTime + dur);
+      src.connect(bq); bq.connect(gain); gain.connect(c.destination);
+      src.start(); src.stop(c.currentTime + dur);
+    } catch (e) { }
+  }
+
+  return {
+    flap() {
+      // Short airy whoosh — sine sweep up
+      play({ type: 'sine', freq: 280, freqEnd: 520, dur: 0.12, vol: 0.14, attack: 0.003 });
+      play({ type: 'triangle', freq: 180, freqEnd: 360, dur: 0.1, vol: 0.07, attack: 0.003 });
+    },
+    score() {
+      // Quick upward blip
+      play({ type: 'square', freq: 660, freqEnd: 880, dur: 0.1, vol: 0.12, attack: 0.003 });
+    },
+    die() {
+      // Low crunch + noise burst
+      play({ type: 'sawtooth', freq: 220, freqEnd: 55, dur: 0.4, vol: 0.22, attack: 0.005 });
+      play({ type: 'square', freq: 110, freqEnd: 40, dur: 0.5, vol: 0.15, attack: 0.005 });
+      playNoise({ dur: 0.25, vol: 0.18, filterFreq: 600 });
+    },
+    dimShift() {
+      // Sci-fi arpeggio sweep
+      const notes = [330, 440, 550, 660, 880];
+      notes.forEach((f, i) => {
+        setTimeout(() => play({ type: 'square', freq: f, freqEnd: f * 1.05, dur: 0.12, vol: 0.13, attack: 0.005 }), i * 55);
+      });
+      play({ type: 'sine', freq: 110, freqEnd: 440, dur: 0.35, vol: 0.09, attack: 0.01 });
+    },
+    countdown(n) {
+      // Tick for 3/2/1, higher + longer for GO
+      if (n === 0) {
+        play({ type: 'square', freq: 880, freqEnd: 1100, dur: 0.22, vol: 0.16, attack: 0.003 });
+        play({ type: 'sine', freq: 660, freqEnd: 880, dur: 0.22, vol: 0.10, attack: 0.003 });
+      } else {
+        play({ type: 'square', freq: 440, dur: 0.09, vol: 0.13, attack: 0.003 });
+      }
+    },
+  };
+})();
 
 // ══════════════════════════════════════════════════════════
 // DIMENSIONS
@@ -181,12 +264,12 @@ function drawBird(x, y, wingPhase, dim) {
     ctx.translate(cx, cy); ctx.scale(1, -1); ctx.translate(-cx, -cy);
   }
   const wingDrop = Math.sin(wingPhase) * 5;
-  if (FX.shadows) { ctx.shadowColor = dim.accentColor; ctx.shadowBlur = 10; }
+  ctx.shadowColor = dim.accentColor; ctx.shadowBlur = 10;
   ctx.fillStyle = dim.accentColor;
   roundRect(ctx, x + 4, y + 5, w - 8, h - 9, 4); ctx.fill();
   ctx.fillStyle = shadeColor(dim.accentColor, -40);
   roundRect(ctx, x - 5, cy - 4 + wingDrop, 12, 9, 3); ctx.fill();
-  if (FX.shadows) ctx.shadowBlur = 0;
+  ctx.shadowBlur = 0;
   ctx.fillStyle = '#0a0a12'; ctx.fillRect(x + w - 14, y + 7, 7, 6);
   ctx.fillStyle = '#ffffff'; ctx.fillRect(x + w - 13, y + 8, 3, 3);
   ctx.fillStyle = '#ffaa00';
@@ -230,7 +313,7 @@ function drawPop(pop) {
   }
 
   // ── 3. Pixel square particles ──
-  const NUM = IS_MOBILE ? 10 : 16;
+  const NUM = 16;
   for (let i = 0; i < NUM; i++) {
     const angle = (i / NUM) * Math.PI * 2 + (i % 2 === 0 ? 0.1 : -0.1);
     const delay = (i % 3) * 0.05;
@@ -279,28 +362,18 @@ function drawPipe(x, y, w, h, isTop, dim) {
   if (h <= 0) return;
   const capH = 16, capW = w + 10;
   ctx.save();
-  if (FX.shadows) { ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 16; }
-  if (FX.pipeGrad) {
-    const grad = ctx.createLinearGradient(x, 0, x + w, 0);
-    grad.addColorStop(0, shadeColor(dim.pipeColor, -60));
-    grad.addColorStop(0.3, dim.pipeColor);
-    grad.addColorStop(1, shadeColor(dim.pipeColor, -40));
-    ctx.fillStyle = grad;
-  } else {
-    ctx.fillStyle = dim.pipeColor;
-  }
-  ctx.fillRect(x, y, w, h);
-  if (FX.shadows) ctx.shadowBlur = 0;
+  ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 16;
+  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+  grad.addColorStop(0, shadeColor(dim.pipeColor, -60));
+  grad.addColorStop(0.3, dim.pipeColor);
+  grad.addColorStop(1, shadeColor(dim.pipeColor, -40));
+  ctx.fillStyle = grad; ctx.fillRect(x, y, w, h);
   ctx.fillStyle = shadeColor(dim.pipeColor, 20);
   ctx.fillRect(x - (capW - w) / 2, isTop ? y + h - capH : y, capW, capH);
-  if (FX.pipeGrad) {
-    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(x + 5, y, 5, h);
-  }
-  if (FX.pipeStripes) {
-    ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1;
-    for (let py = y; py < y + h; py += 14) {
-      ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x + w, py); ctx.stroke();
-    }
+  ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(x + 5, y, 5, h);
+  ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1;
+  for (let py = y; py < y + h; py += 14) {
+    ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x + w, py); ctx.stroke();
   }
   ctx.restore();
 }
@@ -326,8 +399,8 @@ function drawStars(dim) {
     if (s.x < 0) { s.x = canvas.width; s.y = Math.random() * (canvas.height - GROUND_H); }
     ctx.globalAlpha = s.alpha;
     ctx.fillStyle = dim.accentColor;
-    if (FX.starGlow && s.big) { ctx.shadowColor = dim.accentColor; ctx.shadowBlur = 5; }
-    else if (FX.starGlow) ctx.shadowBlur = 0;
+    ctx.shadowColor = dim.accentColor;
+    ctx.shadowBlur = s.big ? 5 : 0;
     ctx.fillRect(Math.round(s.x), Math.round(s.y), s.big ? 2 : 1, s.big ? 2 : 1);
   }
   ctx.globalAlpha = 1; ctx.shadowBlur = 0;
@@ -341,9 +414,9 @@ function drawGround(dim) {
   const gy = canvas.height - GROUND_H;
   ctx.fillStyle = dim.groundColor; ctx.fillRect(0, gy, canvas.width, GROUND_H);
   ctx.strokeStyle = dim.pipeColor; ctx.lineWidth = 2;
-  if (FX.shadows) { ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 8; }
+  ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 8;
   ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
-  if (FX.shadows) ctx.shadowBlur = 0;
+  ctx.shadowBlur = 0;
   ctx.fillStyle = shadeColor(dim.groundColor, 12);
   const bw = 44, offset = state.groundOffset % bw;
   for (let bx = -bw + offset; bx < canvas.width + bw; bx += bw)
@@ -355,7 +428,12 @@ function drawGround(dim) {
 // ══════════════════════════════════════════════════════════
 function getPipeMoveOffset(p) {
   if (!state.dim.pipesMove) return 0;
-  return Math.sin(p.movePhase) * state.dim.pipeMoveAmp;
+  const usableH = canvas.height - GROUND_H;
+  const raw = Math.sin(p.movePhase) * state.dim.pipeMoveAmp;
+  // Clamp: top pipe can never go above y=0, bottom pipe can never go below ground
+  const minOff = 0;
+  const maxOff = usableH - p.topH - p.gap;
+  return Math.max(minOff, Math.min(maxOff, raw));
 }
 
 function spawnPipe() {
@@ -376,6 +454,7 @@ function onFlap() {
   state.hasFlapped = true;
   state.velY = state.invertGravity ? Math.abs(BASE_FLAP) : BASE_FLAP;
   state.wingPhase = 0;
+  SFX.flap();
 }
 
 document.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventDefault(); onFlap(); } });
@@ -387,14 +466,8 @@ canvas.addEventListener('touchstart', e => { e.preventDefault(); onFlap(); }, { 
 // ══════════════════════════════════════════════════════════
 function resizeCanvas() {
   const rect = gameArea.getBoundingClientRect();
-  const dpr = Math.min(window.devicePixelRatio || 1, IS_MOBILE ? 1.5 : 2);
-  const w = rect.width  || 390;
-  const h = rect.height || 620;
-  canvas.width  = Math.round(w * dpr);
-  canvas.height = Math.round(h * dpr);
-  canvas.style.width  = w + 'px';
-  canvas.style.height = h + 'px';
-  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  canvas.width = rect.width || 390;
+  canvas.height = rect.height || 620;
 }
 window.addEventListener('resize', () => {
   resizeCanvas();
@@ -407,7 +480,7 @@ window.addEventListener('resize', () => {
 // ══════════════════════════════════════════════════════════
 function generateStars() {
   const stars = [];
-  for (let i = 0; i < FX.starCount; i++)
+  for (let i = 0; i < 60; i++)
     stars.push({
       x: Math.random() * canvas.width,
       y: Math.random() * (canvas.height - GROUND_H),
@@ -463,6 +536,7 @@ function advanceDimension() {
   dimBanner.style.borderColor = state.dim.accentColor;
   dimBanner.style.textShadow = '0 0 20px ' + state.dim.accentColor;
   dimBanner.classList.add('show');
+  SFX.dimShift();
   gameArea.classList.remove('shake', 'glitch-flash');
   void gameArea.offsetWidth;
   gameArea.classList.add('shake');
@@ -495,36 +569,45 @@ function checkCollisions(inGrace) {
 // ══════════════════════════════════════════════════════════
 // UPDATE
 // ══════════════════════════════════════════════════════════
-function update() {
+function update(dt = 1) {
   if (!state.running) return;
-  state.frameCount++;
 
-  glitchTimer = state.dim.glitch ? Math.max(0, glitchTimer - 1) : 0;
-  if (state.dim.glitch && Math.random() < 0.025) glitchTimer = 4;
+  // Countdown tick SFX — fire once per slot change
+  if (state.frameCount < PIPE_START_DELAY) {
+    const prevSlot = Math.min(3, Math.floor(state.frameCount / (PIPE_START_DELAY / 4)));
+    const nextSlot = Math.min(3, Math.floor((state.frameCount + dt) / (PIPE_START_DELAY / 4)));
+    if (nextSlot > prevSlot) SFX.countdown(3 - nextSlot); // 3→2→1→GO (0)
+  }
+
+  state.frameCount += dt;
+
+  glitchTimer = state.dim.glitch ? Math.max(0, glitchTimer - dt) : 0;
+  if (state.dim.glitch && Math.random() < 0.025 * dt) glitchTimer = 4;
 
   // Physics — gravity only after first flap; hover bob until then
   if (state.hasFlapped) {
     const gravDir = state.invertGravity ? -1 : 1;
-    state.velY += state.gravity * gravDir;
+    state.velY += state.gravity * gravDir * dt;
     if (!state.invertGravity) state.velY = Math.min(state.velY, MAX_FALL_SPEED);
     else state.velY = Math.max(state.velY, -MAX_FALL_SPEED);
-    state.bird.y += state.velY;
+    state.bird.y += state.velY * dt;
   } else {
     state.bird.y = state.bird.startY + Math.sin(state.frameCount * 0.06) * 5;
   }
 
-  state.wingPhase += 0.2;
-  state.groundOffset += state.speed;
+  state.wingPhase += 0.2 * dt;
+  state.groundOffset += state.speed * dt;
 
   const inGrace = state.frameCount < PIPE_START_DELAY;
   if (!inGrace) {
     for (const p of state.pipes) {
-      p.x -= state.speed;
-      if (state.dim.pipesMove) p.movePhase += state.dim.pipeMoveSpeed;
+      p.x -= state.speed * dt;
+      if (state.dim.pipesMove) p.movePhase += state.dim.pipeMoveSpeed * dt;
       if (!p.counted && p.x + PIPE_WIDTH < state.bird.x) {
         p.counted = true;
         state.score++;
         scoreDisplay.textContent = state.score;
+        SFX.score();
         if (state.score > 0 && state.score % SCORE_PER_DIM === 0) advanceDimension();
       }
     }
@@ -592,10 +675,18 @@ function draw() {
 }
 
 // ══════════════════════════════════════════════════════════
-// GAME LOOP
+// GAME LOOP — delta-time normalised to 60 fps
 // ══════════════════════════════════════════════════════════
-function loop() {
-  update();
+let lastTimestamp = null;
+
+function loop(timestamp) {
+  if (lastTimestamp === null) lastTimestamp = timestamp;
+  // dt = how many "60fps frames" worth of time has passed (1.0 = exactly one 60fps frame)
+  const rawDt = (timestamp - lastTimestamp) / (1000 / 60);
+  // Clamp: if tab was hidden / paused, don't let dt explode
+  const dt = Math.min(rawDt, 3);
+  lastTimestamp = timestamp;
+  update(dt);
   draw();
   animFrame = requestAnimationFrame(loop);
 }
@@ -607,6 +698,7 @@ function endGame() {
   if (!state.running) return;
   state.running = false;
   cancelAnimationFrame(animFrame);
+  SFX.die();
 
   if (state.score > bestScore) bestScore = state.score;
   finalScoreEl.textContent = state.score;
@@ -627,7 +719,8 @@ function endGame() {
   gameArea.classList.add('shake');
 
   // Animate the burst, then reveal game over
-  function playBurst() {
+  function playBurst(timestamp) {
+    if (lastTimestamp === null) lastTimestamp = timestamp;
     draw();
     state.pop.frame++;
     if (state.pop.frame < state.pop.maxFrames) {
@@ -665,7 +758,8 @@ function startGame() {
   scoreDisplay.textContent = '0';
   resetGame();
   cancelAnimationFrame(animFrame);
-  loop();
+  lastTimestamp = null;
+  animFrame = requestAnimationFrame(loop);
 }
 
 // ══════════════════════════════════════════════════════════
