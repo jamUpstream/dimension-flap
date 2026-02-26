@@ -221,10 +221,10 @@ body {
 .screen {
   position: absolute;
   inset: 0;
-  /* Use grid so the card is always centered but can scroll if too tall */
-  display: grid;
-  place-items: center;
-  overflow-y: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
   z-index: 20;
   pointer-events: none;
   opacity: 0;
@@ -242,14 +242,15 @@ body {
   flex-direction: column;
   align-items: center;
   gap: 14px;
-  padding: clamp(16px, 3vh, 28px) 20px;
+  padding: clamp(12px, 3vh, 28px) 20px;
   border: 1px solid var(--accent);
   box-shadow: 0 0 30px rgba(0, 255, 204, 0.2), inset 0 0 40px rgba(0, 255, 204, 0.03);
   background: rgba(5, 5, 14, 0.98);
   position: relative;
   width: 92%;
-  /* Stay centered but allow natural height; grid handles alignment */
-  margin: auto;
+  max-height: 92%;
+  overflow-y: auto;
+  overflow-x: hidden;
 }
 
 .screen-content::before {
@@ -633,13 +634,17 @@ kbd {
 }
 
 .hud-dim {
-  font-size: 0.65rem;
-  letter-spacing: 3px;
+  font-size: 0.62rem;
+  letter-spacing: 1.5px;
   color: var(--accent);
   text-shadow: 0 0 8px currentColor;
-  padding: 3px 8px;
+  padding: 3px 7px;
   border: 1px solid currentColor;
   background: rgba(0, 0, 0, 0.5);
+  max-width: 110px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 
 /* ── Dimension Banner ──────────────────────────────────── */
@@ -650,16 +655,17 @@ kbd {
   transform: translate(-50%, -50%) scale(0.8);
   z-index: 30;
   font-family: 'Black Ops One', sans-serif;
-  font-size: 1.1rem;
-  letter-spacing: 4px;
+  font-size: clamp(0.75rem, 3vw, 1.1rem);
+  letter-spacing: 2px;
   color: var(--accent);
   text-shadow: 0 0 20px currentColor;
-  padding: 12px 24px;
+  padding: 12px 20px;
   border: 2px solid currentColor;
   background: rgba(0, 0, 0, 0.92);
   pointer-events: none;
   opacity: 0;
   white-space: nowrap;
+  max-width: 90%;
 }
 
 .dim-banner.show {

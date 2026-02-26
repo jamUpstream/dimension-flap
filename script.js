@@ -57,6 +57,63 @@ document.getElementById('goLeaderboardBtn').addEventListener('click', openLeader
 document.getElementById('lbCloseBtn').addEventListener('click', closeLeaderboard);
 saveScoreBtn.addEventListener('click', handleSaveScore);
 
+let cheatNoclip = false;
+let cheatBuffer = '';
+const CHEAT_CODE = 'jamwassogreat';
+
+function showToast(msg, color = '#00ffcc') {
+  const existing = document.getElementById('cheatToast');
+  if (existing) existing.remove();
+  const toast = document.createElement('div');
+  toast.id = 'cheatToast';
+  toast.textContent = msg;
+  toast.style.cssText = `
+    position: fixed;
+    bottom: 80px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: rgba(5,5,14,0.97);
+    color: ${color};
+    border: 1px solid ${color};
+    box-shadow: 0 0 18px ${color}55;
+    font-family: 'Black Ops One', sans-serif;
+    font-size: 0.78rem;
+    letter-spacing: 2px;
+    padding: 10px 20px;
+    z-index: 9999;
+    pointer-events: none;
+    white-space: nowrap;
+    opacity: 1;
+    transition: opacity 0.4s ease;
+  `;
+  document.body.appendChild(toast);
+  // Fade out after 2.5s
+  setTimeout(() => { toast.style.opacity = '0'; }, 2500);
+  setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3000);
+}
+
+document.addEventListener('keydown', e => {
+  // Only listen for cheat when on start/lobby screen (not mid-game typing)
+  const onLobby = startScreen.classList.contains('active') ||
+    leaderboardScreen.classList.contains('active');
+  if (!onLobby) { cheatBuffer = ''; return; }
+  // Ignore modifier keys and non-character keys
+  if (e.key.length !== 1) { cheatBuffer = ''; return; }
+  cheatBuffer += e.key.toLowerCase();
+  // Trim buffer to code length
+  if (cheatBuffer.length > CHEAT_CODE.length)
+    cheatBuffer = cheatBuffer.slice(-CHEAT_CODE.length);
+  if (cheatBuffer === CHEAT_CODE) {
+    cheatBuffer = '';
+    cheatNoclip = !cheatNoclip;
+    if (cheatNoclip) {
+      showToast('⚡ NOCLIP ACTIVATED', '#ff3c78');
+    } else {
+      showToast('NOCLIP DEACTIVATED', '#888888');
+    }
+  }
+});
+
 // ══════════════════════════════════════════════════════════
 // CONSTANTS
 // ══════════════════════════════════════════════════════════
@@ -212,8 +269,8 @@ const DIMENSIONS = [
     id: 5, name: "INVERSION",
     bgTop: "#001a1a", bgBot: "#003333",
     pipeColor: "#00ffff", pipeGlow: "#00ffff", groundColor: "#003333", accentColor: "#00ffff",
-    gravMult: -1.0, speedMult: 2.0, gapMod: -10,
-    pipesMove: true, pipeMoveAmp: 55, pipeMoveSpeed: 0.03, invertGravity: true, glitch: false
+    gravMult: -1.0, speedMult: 1.6, gapMod: 10,
+    pipesMove: true, pipeMoveAmp: 30, pipeMoveSpeed: 0.02, invertGravity: true, glitch: false
   },
   {
     id: 6, name: "CHAOS",
@@ -221,6 +278,36 @@ const DIMENSIONS = [
     pipeColor: "#ffff00", pipeGlow: "#ffff00", groundColor: "#1a1a00", accentColor: "#ffff00",
     gravMult: 1.4, speedMult: 2.3, gapMod: -22,
     pipesMove: true, pipeMoveAmp: 110, pipeMoveSpeed: 0.05, invertGravity: false, glitch: true
+  },
+  {
+    id: 7, name: "PHANTOM",
+    bgTop: "#0a0a0a", bgBot: "#141414",
+    pipeColor: "#aaaaaa", pipeGlow: "#ffffff", groundColor: "#111111", accentColor: "#cccccc",
+    // Pipes barely visible — low contrast ghost theme
+    gravMult: 1.1, speedMult: 1.5, gapMod: 15,
+    pipesMove: false, invertGravity: false, glitch: false
+  },
+  {
+    id: 8, name: "NEON STORM",
+    bgTop: "#00001a", bgBot: "#001a00",
+    pipeColor: "#ff00ff", pipeGlow: "#ff00ff", groundColor: "#0a000a", accentColor: "#ff00ff",
+    gravMult: 1.25, speedMult: 2.0, gapMod: -12,
+    pipesMove: true, pipeMoveAmp: 70, pipeMoveSpeed: 0.045, invertGravity: false, glitch: true
+  },
+  {
+    id: 9, name: "ABYSS",
+    bgTop: "#000000", bgBot: "#000000",
+    pipeColor: "#003366", pipeGlow: "#0055ff", groundColor: "#000510", accentColor: "#0077ff",
+    // Near-black bg, dark blue pipes — visibility challenge
+    gravMult: 1.3, speedMult: 1.75, gapMod: -5,
+    pipesMove: true, pipeMoveAmp: 50, pipeMoveSpeed: 0.025, invertGravity: false, glitch: false
+  },
+  {
+    id: 10, name: "OBLIVION",
+    bgTop: "#0a0000", bgBot: "#1a0000",
+    pipeColor: "#ff2200", pipeGlow: "#ff4400", groundColor: "#0f0000", accentColor: "#ff3300",
+    gravMult: 1.5, speedMult: 2.5, gapMod: -28,
+    pipesMove: true, pipeMoveAmp: 130, pipeMoveSpeed: 0.06, invertGravity: false, glitch: true
   },
 ];
 
@@ -260,9 +347,21 @@ function drawBird(x, y, wingPhase, dim) {
   const w = BIRD_W, h = BIRD_H;
   const cx = x + w / 2, cy = y + h / 2;
   ctx.save();
-  if (state.invertGravity) {
-    ctx.translate(cx, cy); ctx.scale(1, -1); ctx.translate(-cx, -cy);
+
+  // Tilt based on vertical velocity: nose up on flap, nose down when falling
+  const maxTilt = Math.PI * 0.38;   // ~68° max downward tilt
+  const riseAngle = -Math.PI * 0.18; // ~-32° nose-up kick on flap
+  let tilt = 0;
+  if (state.hasFlapped) {
+    // Map velY: negative (rising) → riseAngle, positive (falling) → maxTilt
+    tilt = Math.max(riseAngle, Math.min(maxTilt, state.velY * 0.09));
   }
+  if (state.invertGravity) tilt = -tilt;
+
+  ctx.translate(cx, cy);
+  ctx.rotate(tilt);
+  if (state.invertGravity) ctx.scale(1, -1);
+  ctx.translate(-cx, -cy);
   const wingDrop = Math.sin(wingPhase) * 5;
   ctx.shadowColor = dim.accentColor; ctx.shadowBlur = 10;
   ctx.fillStyle = dim.accentColor;
@@ -440,7 +539,17 @@ function spawnPipe() {
   const gap = Math.max(MIN_GAP, MIN_GAP + Math.max(0, 50 - state.score * 1.2) + state.dim.gapMod);
   const usableH = canvas.height - GROUND_H;
   const minTopH = 55, maxTopH = usableH - gap - 55;
-  const topH = minTopH + Math.random() * (maxTopH - minTopH);
+
+  // Limit vertical jump from the last pipe so consecutive pipes are never impossible
+  const MAX_STEP = (maxTopH - minTopH) * 0.38; // max 38% of full range per pipe
+  const lastPipe = state.pipes[state.pipes.length - 1];
+  let lo = minTopH, hi = maxTopH;
+  if (lastPipe) {
+    lo = Math.max(minTopH, lastPipe.topH - MAX_STEP);
+    hi = Math.min(maxTopH, lastPipe.topH + MAX_STEP);
+  }
+
+  const topH = lo + Math.random() * (hi - lo);
   state.pipes.push({ x: canvas.width + PIPE_WIDTH, topH, gap, movePhase: Math.random() * Math.PI * 2, counted: false });
 }
 
@@ -517,17 +626,52 @@ function resetGame() {
     pop: null,
   };
   scoreSaved = false;
+  lastRandomDimIdx = -1;
 }
 
 // ══════════════════════════════════════════════════════════
 // DIMENSION ADVANCE
 // ══════════════════════════════════════════════════════════
+// Pool of dimension indices (0-based) that can be randomly cycled in dim 11+
+// Excludes dim 0 (NORMAL) — chaos zone should stay hard
+const RANDOM_POOL = [1, 2, 3, 4, 5, 6, 7, 8, 9];
+// Tracks last random pick so we never repeat back-to-back
+let lastRandomDimIdx = -1;
+
+function pickRandomDim() {
+  const pool = RANDOM_POOL.filter(i => i !== lastRandomDimIdx);
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  lastRandomDimIdx = pick;
+  return pick;
+}
+
 function advanceDimension() {
-  if (state.dimIndex >= DIMENSIONS.length - 1) return;
-  state.dimIndex++;
-  state.dim = DIMENSIONS[state.dimIndex];
+  state.dimIndex++;  // always increment — no cap
+
+  let nextDim;
+  if (state.dimIndex < DIMENSIONS.length) {
+    // Dims 1–10: follow the fixed sequence
+    nextDim = DIMENSIONS[state.dimIndex];
+  } else {
+    // Dim 11+: random shuffle from the pool each time
+    nextDim = { ...DIMENSIONS[pickRandomDim()] };
+    // Override the display id to reflect the real progression number
+    nextDim = { ...nextDim, id: state.dimIndex + 1 };
+  }
+
+  state.dim = nextDim;
   state.speed = BASE_SPEED * state.dim.speedMult;
   state.gravity = BASE_GRAVITY * Math.abs(state.dim.gravMult);
+
+  // When gravity flips, reset velocity and reposition bird to mid-screen
+  // so the player isn't instantly killed by carried-over momentum
+  if (state.dim.invertGravity !== state.invertGravity) {
+    state.velY = 0;
+    state.bird.y = (canvas.height - GROUND_H) * 0.5 - BIRD_H / 2;
+    // Clear all pipes so player has breathing room to learn the flip
+    state.pipes = [];
+  }
+
   state.invertGravity = state.dim.invertGravity;
   dimBannerText.textContent = 'DIM ' + state.dim.id + ': ' + state.dim.name;
   dimBanner.classList.remove('show');
@@ -555,7 +699,7 @@ function checkCollisions(inGrace) {
   const groundY = canvas.height - GROUND_H;
   if (!state.invertGravity && by + bh >= groundY) return true;
   if (state.invertGravity && by <= 0) return true;
-  if (!inGrace) {
+  if (!inGrace && !cheatNoclip) {
     for (const p of state.pipes) {
       const yOff = getPipeMoveOffset(p);
       const topB = yOff + p.topH, botT = topB + p.gap;
@@ -630,8 +774,13 @@ function draw() {
   const usableH = canvas.height - GROUND_H;
   for (const p of state.pipes) {
     const yOff = getPipeMoveOffset(p);
-    drawPipe(p.x, yOff, PIPE_WIDTH, p.topH, true, dim);
-    drawPipe(p.x, yOff + p.topH + p.gap, PIPE_WIDTH, usableH - (yOff + p.topH + p.gap), false, dim);
+    // Gap window: yOff shifts where the opening sits vertically
+    const gapTop = yOff + p.topH;   // top edge of the flythrough opening
+    const gapBot = gapTop + p.gap;  // bottom edge of the flythrough opening
+    // Top pipe always fills from ceiling (y=0) down to the gap — no ceiling gap ever
+    drawPipe(p.x, 0, PIPE_WIDTH, gapTop, true, dim);
+    // Bottom pipe always fills from gap down to ground — no floor gap ever
+    drawPipe(p.x, gapBot, PIPE_WIDTH, usableH - gapBot, false, dim);
   }
 
   drawGround(dim);
@@ -641,6 +790,19 @@ function draw() {
     drawPop(state.pop);
   } else {
     drawBird(state.bird.x, state.bird.y, state.wingPhase, dim);
+  }
+
+  // Noclip indicator
+  if (cheatNoclip) {
+    ctx.save();
+    ctx.font = '9px "Share Tech Mono",monospace';
+    ctx.fillStyle = '#ff3c78';
+    ctx.shadowColor = '#ff3c78';
+    ctx.shadowBlur = 8;
+    ctx.globalAlpha = 0.7 + Math.sin(Date.now() * 0.006) * 0.3;
+    ctx.textAlign = 'center';
+    ctx.fillText('⚡ NOCLIP', canvas.width / 2, 18);
+    ctx.restore();
   }
 
   // Countdown overlay
