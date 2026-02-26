@@ -133,6 +133,7 @@ html, body {
   touch-action: none;   /* prevent scroll/zoom hijacking tap on mobile */
   user-select: none;
   -webkit-user-select: none;
+  will-change: contents;  /* hint browser to GPU-composite the canvas */
 }
 
 /* ── Phone Bottom Bar ──────────────────────────────────── */
@@ -428,6 +429,20 @@ kbd {
     rgba(0,0,0,0.1) 2px, rgba(0,0,0,0.1) 4px
   );
   pointer-events: none; z-index: 50;
+}
+
+/* ── Mobile performance: kill expensive CSS effects ───── */
+@media (hover: none) and (pointer: coarse) {
+  /* No scanlines — repeating-gradient repaints every frame */
+  .game-area::after { display: none; }
+  /* No animated blur glows — filter:blur is very slow on mobile */
+  .page-bg { display: none; }
+  /* Simplify box-shadow on phone frame */
+  .phone-frame {
+    box-shadow: 0 0 20px rgba(0,255,204,0.1);
+  }
+  /* filter: on the whole game area is very slow on mobile */
+  .game-area.glitch-flash { animation: none; }
 }
 
 /* ── Compact layout for short screens (game area < 580px tall) ── */

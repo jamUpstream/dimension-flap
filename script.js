@@ -32,8 +32,28 @@ const sb = {
 // CANVAS & DOM
 // ══════════════════════════════════════════════════════════
 const canvas = document.getElementById('gameCanvas');
-const ctx = canvas.getContext('2d');
+const ctx = canvas.getContext('2d', { alpha: false }); // alpha:false = faster compositing
 const gameArea = document.getElementById('gameArea');
+
+// ── Mobile detection & performance tier ──────────────────
+const IS_MOBILE = /Android|iPhone|iPad|iPod|Mobile/i.test(navigator.userAgent)
+  || ('ontouchstart' in window && window.innerWidth < 900);
+
+// On mobile: disable expensive effects
+const FX = {
+  shadows:    !IS_MOBILE,   // ctx.shadowBlur costs GPU fill rate
+  pipeStripes:!IS_MOBILE,   // per-pixel stripe loop
+  pipeGrad:   !IS_MOBILE,   // linear gradient per pipe
+  bgGlows:    !IS_MOBILE,   // CSS animated blur glows
+  starGlow:   !IS_MOBILE,   // star shadowBlur
+  starCount:  IS_MOBILE ? 30 : 60,
+};
+
+// Hide expensive CSS background glows on mobile
+if (!FX.bgGlows) {
+  const el = document.querySelector('.page-bg');
+  if (el) el.style.display = 'none';
+}
 
 const startScreen = document.getElementById('startScreen');
 const gameOverScreen = document.getElementById('gameOverScreen');
@@ -161,12 +181,12 @@ function drawBird(x, y, wingPhase, dim) {
     ctx.translate(cx, cy); ctx.scale(1, -1); ctx.translate(-cx, -cy);
   }
   const wingDrop = Math.sin(wingPhase) * 5;
-  ctx.shadowColor = dim.accentColor; ctx.shadowBlur = 10;
+  if (FX.shadows) { ctx.shadowColor = dim.accentColor; ctx.shadowBlur = 10; }
   ctx.fillStyle = dim.accentColor;
   roundRect(ctx, x + 4, y + 5, w - 8, h - 9, 4); ctx.fill();
   ctx.fillStyle = shadeColor(dim.accentColor, -40);
   roundRect(ctx, x - 5, cy - 4 + wingDrop, 12, 9, 3); ctx.fill();
-  ctx.shadowBlur = 0;
+  if (FX.shadows) ctx.shadowBlur = 0;
   ctx.fillStyle = '#0a0a12'; ctx.fillRect(x + w - 14, y + 7, 7, 6);
   ctx.fillStyle = '#ffffff'; ctx.fillRect(x + w - 13, y + 8, 3, 3);
   ctx.fillStyle = '#ffaa00';
@@ -210,7 +230,7 @@ function drawPop(pop) {
   }
 
   // ── 3. Pixel square particles ──
-  const NUM = 16;
+  const NUM = IS_MOBILE ? 10 : 16;
   for (let i = 0; i < NUM; i++) {
     const angle = (i / NUM) * Math.PI * 2 + (i % 2 === 0 ? 0.1 : -0.1);
     const delay = (i % 3) * 0.05;
@@ -259,18 +279,28 @@ function drawPipe(x, y, w, h, isTop, dim) {
   if (h <= 0) return;
   const capH = 16, capW = w + 10;
   ctx.save();
-  ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 16;
-  const grad = ctx.createLinearGradient(x, 0, x + w, 0);
-  grad.addColorStop(0, shadeColor(dim.pipeColor, -60));
-  grad.addColorStop(0.3, dim.pipeColor);
-  grad.addColorStop(1, shadeColor(dim.pipeColor, -40));
-  ctx.fillStyle = grad; ctx.fillRect(x, y, w, h);
+  if (FX.shadows) { ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 16; }
+  if (FX.pipeGrad) {
+    const grad = ctx.createLinearGradient(x, 0, x + w, 0);
+    grad.addColorStop(0, shadeColor(dim.pipeColor, -60));
+    grad.addColorStop(0.3, dim.pipeColor);
+    grad.addColorStop(1, shadeColor(dim.pipeColor, -40));
+    ctx.fillStyle = grad;
+  } else {
+    ctx.fillStyle = dim.pipeColor;
+  }
+  ctx.fillRect(x, y, w, h);
+  if (FX.shadows) ctx.shadowBlur = 0;
   ctx.fillStyle = shadeColor(dim.pipeColor, 20);
   ctx.fillRect(x - (capW - w) / 2, isTop ? y + h - capH : y, capW, capH);
-  ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(x + 5, y, 5, h);
-  ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1;
-  for (let py = y; py < y + h; py += 14) {
-    ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x + w, py); ctx.stroke();
+  if (FX.pipeGrad) {
+    ctx.fillStyle = 'rgba(255,255,255,0.1)'; ctx.fillRect(x + 5, y, 5, h);
+  }
+  if (FX.pipeStripes) {
+    ctx.strokeStyle = 'rgba(0,0,0,0.18)'; ctx.lineWidth = 1;
+    for (let py = y; py < y + h; py += 14) {
+      ctx.beginPath(); ctx.moveTo(x, py); ctx.lineTo(x + w, py); ctx.stroke();
+    }
   }
   ctx.restore();
 }
@@ -296,8 +326,8 @@ function drawStars(dim) {
     if (s.x < 0) { s.x = canvas.width; s.y = Math.random() * (canvas.height - GROUND_H); }
     ctx.globalAlpha = s.alpha;
     ctx.fillStyle = dim.accentColor;
-    ctx.shadowColor = dim.accentColor;
-    ctx.shadowBlur = s.big ? 5 : 0;
+    if (FX.starGlow && s.big) { ctx.shadowColor = dim.accentColor; ctx.shadowBlur = 5; }
+    else if (FX.starGlow) ctx.shadowBlur = 0;
     ctx.fillRect(Math.round(s.x), Math.round(s.y), s.big ? 2 : 1, s.big ? 2 : 1);
   }
   ctx.globalAlpha = 1; ctx.shadowBlur = 0;
@@ -311,9 +341,9 @@ function drawGround(dim) {
   const gy = canvas.height - GROUND_H;
   ctx.fillStyle = dim.groundColor; ctx.fillRect(0, gy, canvas.width, GROUND_H);
   ctx.strokeStyle = dim.pipeColor; ctx.lineWidth = 2;
-  ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 8;
+  if (FX.shadows) { ctx.shadowColor = dim.pipeGlow; ctx.shadowBlur = 8; }
   ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(canvas.width, gy); ctx.stroke();
-  ctx.shadowBlur = 0;
+  if (FX.shadows) ctx.shadowBlur = 0;
   ctx.fillStyle = shadeColor(dim.groundColor, 12);
   const bw = 44, offset = state.groundOffset % bw;
   for (let bx = -bw + offset; bx < canvas.width + bw; bx += bw)
@@ -357,8 +387,14 @@ canvas.addEventListener('touchstart', e => { e.preventDefault(); onFlap(); }, { 
 // ══════════════════════════════════════════════════════════
 function resizeCanvas() {
   const rect = gameArea.getBoundingClientRect();
-  canvas.width = rect.width || 390;
-  canvas.height = rect.height || 620;
+  const dpr = Math.min(window.devicePixelRatio || 1, IS_MOBILE ? 1.5 : 2);
+  const w = rect.width  || 390;
+  const h = rect.height || 620;
+  canvas.width  = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  canvas.style.width  = w + 'px';
+  canvas.style.height = h + 'px';
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
 }
 window.addEventListener('resize', () => {
   resizeCanvas();
@@ -371,7 +407,7 @@ window.addEventListener('resize', () => {
 // ══════════════════════════════════════════════════════════
 function generateStars() {
   const stars = [];
-  for (let i = 0; i < 60; i++)
+  for (let i = 0; i < FX.starCount; i++)
     stars.push({
       x: Math.random() * canvas.width,
       y: Math.random() * (canvas.height - GROUND_H),
