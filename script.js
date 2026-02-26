@@ -57,6 +57,9 @@ document.getElementById('goLeaderboardBtn').addEventListener('click', openLeader
 document.getElementById('lbCloseBtn').addEventListener('click', closeLeaderboard);
 saveScoreBtn.addEventListener('click', handleSaveScore);
 
+// ══════════════════════════════════════════════════════════
+// CHEAT CODE — type "jamwassogreat" on start/lobby screen
+// ══════════════════════════════════════════════════════════
 let cheatNoclip = false;
 let cheatBuffer = '';
 const CHEAT_CODE = 'jamwassogreat';
@@ -125,7 +128,7 @@ const PIPE_WIDTH = 52;
 const MIN_GAP = 110;    // generous pipe gap
 const PIPE_SPAWN_DIST = 200;    // spacing between pipes
 const PIPE_START_DELAY = 200;    // ~3.3s grace period before pipes
-const SCORE_PER_DIM = 15;
+const SCORE_PER_DIM = 50;
 const BIRD_W = 32;
 const BIRD_H = 26;
 const GROUND_H = 50;
@@ -241,73 +244,69 @@ const DIMENSIONS = [
     id: 1, name: "NORMAL",
     bgTop: "#0d0d2b", bgBot: "#1a1a3a",
     pipeColor: "#00ffcc", pipeGlow: "#00ffcc", groundColor: "#1a3a2a", accentColor: "#00ffcc",
-    gravMult: 1.0, speedMult: 1.0, gapMod: 0, pipesMove: false, invertGravity: false, glitch: false
+    gravMult: 1.0, speedMult: 0.88, gapMod: 20, pipesMove: false, invertGravity: false, glitch: false
   },
   {
     id: 2, name: "OVERDRIVE",
     bgTop: "#1a0d00", bgBot: "#3a1a00",
     pipeColor: "#ff8c00", pipeGlow: "#ff8c00", groundColor: "#3a1a00", accentColor: "#ff8c00",
-    gravMult: 1.1, speedMult: 1.35, gapMod: -8, pipesMove: false, invertGravity: false, glitch: false
+    gravMult: 1.05, speedMult: 1.1, gapMod: 10, pipesMove: false, invertGravity: false, glitch: false
   },
   {
     id: 3, name: "WARP",
     bgTop: "#0d001a", bgBot: "#1a0033",
     pipeColor: "#cc00ff", pipeGlow: "#cc00ff", groundColor: "#1a0033", accentColor: "#cc00ff",
-    // Easier: slightly lighter gravity, modest speed bump, WIDER gap (+20),
-    // slow gentle pipe sway so you can track them easily
-    gravMult: 0.82, speedMult: 1.2, gapMod: 20,
-    pipesMove: true, pipeMoveAmp: 22, pipeMoveSpeed: 0.01, invertGravity: false, glitch: false
+    gravMult: 0.9, speedMult: 1.15, gapMod: 25,
+    pipesMove: true, pipeMoveAmp: 18, pipeMoveSpeed: 0.008, invertGravity: false, glitch: false
   },
   {
     id: 4, name: "VOID",
     bgTop: "#000000", bgBot: "#0a0010",
     pipeColor: "#ff3c78", pipeGlow: "#ff3c78", groundColor: "#0a000a", accentColor: "#ff3c78",
-    gravMult: 1.2, speedMult: 1.85, gapMod: -16,
-    pipesMove: true, pipeMoveAmp: 90, pipeMoveSpeed: 0.035, invertGravity: false, glitch: true
+    gravMult: 1.1, speedMult: 1.3, gapMod: 5,
+    pipesMove: true, pipeMoveAmp: 35, pipeMoveSpeed: 0.018, invertGravity: false, glitch: true
   },
   {
     id: 5, name: "INVERSION",
     bgTop: "#001a1a", bgBot: "#003333",
     pipeColor: "#00ffff", pipeGlow: "#00ffff", groundColor: "#003333", accentColor: "#00ffff",
-    gravMult: -1.0, speedMult: 1.6, gapMod: 10,
-    pipesMove: true, pipeMoveAmp: 30, pipeMoveSpeed: 0.02, invertGravity: true, glitch: false
+    gravMult: -1.0, speedMult: 1.15, gapMod: 30,
+    pipesMove: true, pipeMoveAmp: 18, pipeMoveSpeed: 0.012, invertGravity: true, glitch: false
   },
   {
     id: 6, name: "CHAOS",
     bgTop: "#1a0a00", bgBot: "#0a001a",
     pipeColor: "#ffff00", pipeGlow: "#ffff00", groundColor: "#1a1a00", accentColor: "#ffff00",
-    gravMult: 1.4, speedMult: 2.3, gapMod: -22,
-    pipesMove: true, pipeMoveAmp: 110, pipeMoveSpeed: 0.05, invertGravity: false, glitch: true
+    gravMult: 1.2, speedMult: 1.5, gapMod: -5,
+    pipesMove: true, pipeMoveAmp: 55, pipeMoveSpeed: 0.025, invertGravity: false, glitch: true
   },
   {
     id: 7, name: "PHANTOM",
     bgTop: "#0a0a0a", bgBot: "#141414",
-    pipeColor: "#aaaaaa", pipeGlow: "#ffffff", groundColor: "#111111", accentColor: "#cccccc",
-    // Pipes barely visible — low contrast ghost theme
-    gravMult: 1.1, speedMult: 1.5, gapMod: 15,
+    pipeColor: "#999999", pipeGlow: "#ffffff", groundColor: "#111111", accentColor: "#cccccc",
+    gravMult: 1.1, speedMult: 1.35, gapMod: 10,
     pipesMove: false, invertGravity: false, glitch: false
   },
   {
     id: 8, name: "NEON STORM",
     bgTop: "#00001a", bgBot: "#001a00",
     pipeColor: "#ff00ff", pipeGlow: "#ff00ff", groundColor: "#0a000a", accentColor: "#ff00ff",
-    gravMult: 1.25, speedMult: 2.0, gapMod: -12,
-    pipesMove: true, pipeMoveAmp: 70, pipeMoveSpeed: 0.045, invertGravity: false, glitch: true
+    gravMult: 1.15, speedMult: 1.6, gapMod: -8,
+    pipesMove: true, pipeMoveAmp: 45, pipeMoveSpeed: 0.028, invertGravity: false, glitch: true
   },
   {
     id: 9, name: "ABYSS",
     bgTop: "#000000", bgBot: "#000000",
-    pipeColor: "#003366", pipeGlow: "#0055ff", groundColor: "#000510", accentColor: "#0077ff",
-    // Near-black bg, dark blue pipes — visibility challenge
-    gravMult: 1.3, speedMult: 1.75, gapMod: -5,
-    pipesMove: true, pipeMoveAmp: 50, pipeMoveSpeed: 0.025, invertGravity: false, glitch: false
+    pipeColor: "#003a80", pipeGlow: "#0066ff", groundColor: "#000510", accentColor: "#0077ff",
+    gravMult: 1.2, speedMult: 1.7, gapMod: -10,
+    pipesMove: true, pipeMoveAmp: 38, pipeMoveSpeed: 0.02, invertGravity: false, glitch: false
   },
   {
     id: 10, name: "OBLIVION",
     bgTop: "#0a0000", bgBot: "#1a0000",
     pipeColor: "#ff2200", pipeGlow: "#ff4400", groundColor: "#0f0000", accentColor: "#ff3300",
-    gravMult: 1.5, speedMult: 2.5, gapMod: -28,
-    pipesMove: true, pipeMoveAmp: 130, pipeMoveSpeed: 0.06, invertGravity: false, glitch: true
+    gravMult: 1.3, speedMult: 1.9, gapMod: -18,
+    pipesMove: true, pipeMoveAmp: 75, pipeMoveSpeed: 0.04, invertGravity: false, glitch: true
   },
 ];
 
@@ -897,6 +896,26 @@ function endGame() {
       saveScoreBtn.disabled = false;
       saveScoreBtn.textContent = 'SAVE SCORE';
       saveScoreBtn.classList.remove('saved');
+
+      // If noclip was used, hide the name/save section and show VOID notice
+      const nameEntry = document.getElementById('nameEntry');
+      const voidNotice = document.getElementById('voidNotice') || (() => {
+        const el = document.createElement('div');
+        el.id = 'voidNotice';
+        el.style.cssText = 'font-size:0.7rem;letter-spacing:2px;color:#ff3c78;text-align:center;padding:6px 0;border:1px solid #ff3c7855;background:rgba(255,60,120,0.07);width:100%;';
+        el.textContent = '⚡ NOCLIP USED — SCORE VOIDED';
+        nameEntry.parentNode.insertBefore(el, nameEntry);
+        return el;
+      })();
+
+      if (cheatNoclip) {
+        nameEntry.style.display = 'none';
+        voidNotice.style.display = 'block';
+      } else {
+        nameEntry.style.display = '';
+        voidNotice.style.display = 'none';
+      }
+
       // Show game over
       setTimeout(() => {
         hud.classList.add('hidden');
