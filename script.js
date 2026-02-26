@@ -98,7 +98,7 @@ function showToast(msg, color = '#00ffcc') {
 document.addEventListener('keydown', e => {
   // Only listen for cheat when on start/lobby screen (not mid-game typing)
   const onLobby = startScreen.classList.contains('active') ||
-                  leaderboardScreen.classList.contains('active');
+    leaderboardScreen.classList.contains('active');
   if (!onLobby) { cheatBuffer = ''; return; }
   // Ignore modifier keys and non-character keys
   if (e.key.length !== 1) { cheatBuffer = ''; return; }
@@ -126,12 +126,25 @@ const MAX_FALL_SPEED = 15;      // allow slightly faster falling
 const BASE_SPEED = 2.4;    // faster scroll speed
 const PIPE_WIDTH = 52;
 const MIN_GAP = 110;    // generous pipe gap
-const PIPE_SPAWN_DIST = 200;    // spacing between pipes
+const PIPE_SPAWN_DIST = 150;    // spacing between pipes
 const PIPE_START_DELAY = 200;    // ~3.3s grace period before pipes
-const SCORE_PER_DIM = 15;
+const SCORE_PER_DIM = 50; // score needed to shift to next dimension
 const BIRD_W = 32;
 const BIRD_H = 26;
 const GROUND_H = 50;
+
+// const BASE_GRAVITY = 0.30;   // slightly punchier gravity
+// const BASE_FLAP = -6.8;   // snappier upward kick
+// const MAX_FALL_SPEED = 15;      // allow slightly faster falling
+// const BASE_SPEED = 2.4;    // faster scroll speed
+// const PIPE_WIDTH = 52;
+// const MIN_GAP = 110;    // generous pipe gap
+// const PIPE_SPAWN_DIST = 200;    // spacing between pipes
+// const PIPE_START_DELAY = 200;    // ~3.3s grace period before pipes
+// const SCORE_PER_DIM = 50; // score needed to shift to next dimension
+// const BIRD_W = 32;
+// const BIRD_H = 26;
+// const GROUND_H = 50;
 
 // ══════════════════════════════════════════════════════════
 // SFX  — Web Audio API, zero assets needed
@@ -549,6 +562,25 @@ document.addEventListener('keydown', e => { if (e.code === 'Space') { e.preventD
 canvas.addEventListener('click', onFlap);
 canvas.addEventListener('touchstart', e => { e.preventDefault(); onFlap(); }, { passive: false });
 
+// ── Tablet / desktop: also respond to taps/clicks OUTSIDE the phone frame
+document.addEventListener('touchstart', e => {
+  // Only fire if the touch didn't originate inside the game area (canvas already handles those)
+  // and is not on a button or input element
+  const target = e.target;
+  if (target === canvas) return; // already handled above
+  if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'LABEL') return;
+  onFlap();
+}, { passive: true });
+
+document.addEventListener('click', e => {
+  const target = e.target;
+  if (target === canvas) return; // already handled above
+  if (target.tagName === 'BUTTON' || target.tagName === 'INPUT' || target.tagName === 'LABEL') return;
+  // Only fire if the click was outside the game-area (i.e. on the tablet background)
+  if (gameArea.contains(target)) return;
+  onFlap();
+});
+
 // ══════════════════════════════════════════════════════════
 // CANVAS RESIZE
 // ══════════════════════════════════════════════════════════
@@ -816,17 +848,28 @@ function draw() {
 }
 
 // ══════════════════════════════════════════════════════════
-// GAME LOOP — delta-time normalised to 60 fps
+// GAME LOOP — delta-time normalised to 60 fps, hard-capped at 60 FPS
 // ══════════════════════════════════════════════════════════
 let lastTimestamp = null;
+const FRAME_MIN_MS = 1000 / 60; // ~16.667 ms — never render faster than 60 FPS
 
 function loop(timestamp) {
   if (lastTimestamp === null) lastTimestamp = timestamp;
-  const rawDt = (timestamp - lastTimestamp) / (1000 / 60);
+  const elapsed = timestamp - lastTimestamp;
+
+  // Skip frame if running faster than 60 FPS, but keep the loop alive
+  if (elapsed < FRAME_MIN_MS) {
+    animFrame = requestAnimationFrame(loop);
+    return;
+  }
+
+  // Clamp dt: normalised to 1.0 at 60 FPS, max 3 to survive tab-switch pauses
+  const rawDt = elapsed / FRAME_MIN_MS;
   const dt = Math.min(rawDt, 3);
   lastTimestamp = timestamp;
+
   update(dt);
-  // If update() triggered endGame(), stop here — endGame handles its own rendering
+  // If update() triggered endGame(), stop — endGame handles its own rendering
   if (!state.running) return;
   draw();
   animFrame = requestAnimationFrame(loop);
