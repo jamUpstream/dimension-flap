@@ -197,7 +197,9 @@ hellToggleBtn.addEventListener('click', () => toggleOption('hell'));
 // ── Button SFX — delegated so every .btn and .toggle-btn is covered ──
 const PRIMARY_IDS = new Set(['startBtn', 'restartBtn', 'saveScoreBtn']);
 
+// Hover SFX only for real mouse — pointerType 'touch'/'pen' fires on tap which double-plays
 document.addEventListener('pointerover', e => {
+  if (e.pointerType !== 'mouse') return;
   const btn = e.target.closest('.btn, .toggle-btn');
   if (!btn || btn.disabled) return;
   SFX.btnHover();
