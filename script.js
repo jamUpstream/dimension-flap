@@ -1,3 +1,130 @@
+// ══════════════════════════════════════════════════════════
+// INTRO ANIMATION
+// ══════════════════════════════════════════════════════════
+(function runIntro() {
+  const overlay   = document.getElementById("introOverlay");
+  const iCanvas   = document.getElementById("introCanvas");
+  const bootEl    = document.getElementById("introBootLines");
+  const logoWrap  = document.getElementById("introLogoWrap");
+  const itl1      = document.getElementById("itl1");
+  const itl2      = document.getElementById("itl2");
+  const taglineEl = document.getElementById("introTagline");
+  const phoneFrame = document.querySelector(".phone-frame");
+
+  phoneFrame.classList.add("intro-hidden");
+
+  const ictx = iCanvas.getContext("2d");
+  let particles = [];
+  let raf;
+
+  function resizeIntroCanvas() {
+    iCanvas.width  = window.innerWidth;
+    iCanvas.height = window.innerHeight;
+  }
+  resizeIntroCanvas();
+  window.addEventListener("resize", resizeIntroCanvas);
+
+  for (let i = 0; i < 60; i++) {
+    particles.push({
+      x: Math.random() * window.innerWidth,
+      y: Math.random() * window.innerHeight,
+      vx: (Math.random() - 0.5) * 0.4,
+      vy: -0.3 - Math.random() * 0.5,
+      size: 1 + Math.random() * 2,
+      alpha: 0.1 + Math.random() * 0.35,
+      col: Math.random() > 0.5 ? "#00ffcc" : "#cc00ff",
+    });
+  }
+
+  function tickParticles() {
+    ictx.clearRect(0, 0, iCanvas.width, iCanvas.height);
+    for (const p of particles) {
+      p.x += p.vx; p.y += p.vy;
+      if (p.y < -4) { p.y = iCanvas.height + 4; p.x = Math.random() * iCanvas.width; }
+      ictx.globalAlpha = p.alpha;
+      ictx.fillStyle = p.col;
+      ictx.beginPath();
+      ictx.arc(p.x, p.y, p.size, 0, Math.PI * 2);
+      ictx.fill();
+    }
+    ictx.globalAlpha = 1;
+    raf = requestAnimationFrame(tickParticles);
+  }
+  tickParticles();
+
+  const scanBar = document.createElement("div");
+  scanBar.className = "intro-scanbar";
+  overlay.appendChild(scanBar);
+
+  const BOOT_LINES = [
+    "> INITIALIZING VOID ENGINE v4.2.1...",
+    "> LOADING DIMENSION MATRICES... OK",
+    "> CALIBRATING GRAVITY CONSTANTS... OK",
+    "> SYNCING PARALLEL TIMELINES... OK",
+    "> DIMENSIONAL RIFT STABLE",
+    "> ALL SYSTEMS NOMINAL — ENTERING VOID",
+  ];
+
+  let done = false;
+
+  function finish() {
+    if (done) return;
+    done = true;
+    cancelAnimationFrame(raf);
+    overlay.classList.add("done");
+    phoneFrame.classList.remove("intro-hidden");
+    phoneFrame.classList.add("intro-visible");
+    setTimeout(() => {
+      overlay.remove();
+      window.removeEventListener("resize", resizeIntroCanvas);
+    }, 900);
+  }
+
+  function skipHandler(e) {
+    if (e.type === "keydown" && e.code !== "Space") return;
+    overlay.removeEventListener("click", skipHandler);
+    overlay.removeEventListener("touchstart", skipHandler);
+    document.removeEventListener("keydown", skipHandler);
+    finish();
+  }
+  overlay.addEventListener("click", skipHandler);
+  overlay.addEventListener("touchstart", skipHandler, { passive: true });
+  document.addEventListener("keydown", skipHandler);
+
+  let lineIdx = 0;
+
+  function addBootLine() {
+    if (lineIdx >= BOOT_LINES.length) {
+      setTimeout(showLogo, 120);
+      return;
+    }
+    const div = document.createElement("div");
+    div.className = "intro-boot-line";
+    div.textContent = BOOT_LINES[lineIdx];
+    bootEl.appendChild(div);
+    lineIdx++;
+    const delay = lineIdx >= BOOT_LINES.length - 1 ? 520 : 220;
+    setTimeout(addBootLine, delay);
+  }
+
+  function showLogo() {
+    logoWrap.classList.add("visible");
+    setTimeout(() => {
+      itl1.classList.add("reveal");
+      setTimeout(() => itl1.classList.add("glitch"), 600);
+    }, 80);
+    setTimeout(() => {
+      itl2.classList.add("reveal");
+      setTimeout(() => itl2.classList.add("glitch"), 600);
+    }, 400);
+    setTimeout(() => taglineEl.classList.add("visible"), 900);
+    setTimeout(finish, 2600);
+  }
+
+  setTimeout(addBootLine, 300);
+})();
+
+
 
 const SUPABASE_URL = 'https://zuukqwhpuvqhomfvyzfu.supabase.co';
 const SUPABASE_ANON = 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Inp1dWtxd2hwdXZxaG9tZnZ5emZ1Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3NzE4MzUwMjksImV4cCI6MjA4NzQxMTAyOX0.NON1QYVhhhQNLCFhIMLPpX6hIwzz3qGTSamunp2XdpY';
@@ -66,6 +193,25 @@ document.getElementById('goMenuBtn').addEventListener('click', goToMenu);
 sfxToggleBtn.addEventListener('click', () => toggleOption('sfx'));
 lowSpecToggleBtn.addEventListener('click', () => toggleOption('lowSpec'));
 hellToggleBtn.addEventListener('click', () => toggleOption('hell'));
+
+// ── Button SFX — delegated so every .btn and .toggle-btn is covered ──
+const PRIMARY_IDS = new Set(['startBtn', 'restartBtn', 'saveScoreBtn']);
+
+document.addEventListener('pointerover', e => {
+  const btn = e.target.closest('.btn, .toggle-btn');
+  if (!btn || btn.disabled) return;
+  SFX.btnHover();
+}, { passive: true });
+
+document.addEventListener('click', e => {
+  const btn = e.target.closest('.btn, .toggle-btn');
+  if (!btn || btn.disabled) return;
+  if (PRIMARY_IDS.has(btn.id)) {
+    SFX.btnClickPrimary();
+  } else {
+    SFX.btnClick();
+  }
+}, { passive: true, capture: true });
 
 // ══════════════════════════════════════════════════════════
 // CHEAT CODE — type "jamwassogreat" on start/lobby screen
@@ -247,6 +393,25 @@ const SFX = (() => {
       } else {
         play({ type: 'square', freq: 440, dur: 0.09, vol: 0.13, attack: 0.003 });
       }
+    },
+    // ── UI button sounds ──────────────────────────────────
+    btnHover() {
+      if (sfxMuted) return;
+      // Subtle high tick — quiet sine blip
+      play({ type: 'sine', freq: 880, freqEnd: 1020, dur: 0.055, vol: 0.06, attack: 0.002 });
+    },
+    btnClick() {
+      if (sfxMuted) return;
+      // Snappy two-tone confirm: low thud + bright ping
+      play({ type: 'square', freq: 220, freqEnd: 180, dur: 0.07, vol: 0.13, attack: 0.002 });
+      play({ type: 'sine',   freq: 660, freqEnd: 880, dur: 0.12, vol: 0.11, attack: 0.002 });
+    },
+    btnClickPrimary() {
+      if (sfxMuted) return;
+      // Punchier version for primary actions (ENTER VOID, RETRY, SAVE)
+      play({ type: 'square',   freq: 330, freqEnd: 220, dur: 0.08,  vol: 0.15, attack: 0.002 });
+      play({ type: 'sine',     freq: 880, freqEnd: 1320, dur: 0.18, vol: 0.13, attack: 0.003 });
+      play({ type: 'triangle', freq: 440, freqEnd: 660,  dur: 0.14, vol: 0.08, attack: 0.004 });
     },
   };
 })();
@@ -765,8 +930,9 @@ function checkCollisions(inGrace) {
   const bx = state.bird.x + 4, by = state.bird.y + 4;
   const bw = BIRD_W - 8, bh = BIRD_H - 6;
   const groundY = canvas.height - GROUND_H;
-  if (!state.invertGravity && by + bh >= groundY) return true;
-  if (state.invertGravity && by <= 0) return true;
+  // Ground and ceiling are always lethal — ceiling kills from rapid flapping too
+  if (by + bh >= groundY) return true;   // hit ground (or inverted floor)
+  if (by <= 0)            return true;   // hit ceiling (or inverted ceiling)
   if (!inGrace && !cheatNoclip) {
     for (const p of state.pipes) {
       const yOff = getPipeMoveOffset(p);
@@ -804,6 +970,10 @@ function update(dt = 1) {
     if (!state.invertGravity) state.velY = Math.min(state.velY, MAX_FALL_SPEED);
     else state.velY = Math.max(state.velY, -MAX_FALL_SPEED);
     state.bird.y += state.velY * dt;
+    // If bird escapes boundaries, kill immediately — don't clamp+survive
+    const _ceiling = 0;
+    const _floor   = canvas.height - GROUND_H - BIRD_H;
+    if (state.bird.y < _ceiling || state.bird.y > _floor) { endGame(); return; }
   } else {
     state.bird.y = state.bird.startY + Math.sin(state.frameCount * 0.06) * 5;
   }
