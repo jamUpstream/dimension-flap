@@ -13,6 +13,7 @@
   --phone-h: 720px;
   --phone-r: 40px;
   --border-col: rgba(0, 255, 204, 0.35);
+  --dim-color: #00ffcc;
 }
 
 *,
@@ -91,24 +92,20 @@ body {
 .phone-frame {
   position: relative;
   z-index: 1;
-  /*
-   * Fluid sizing: always fits inside the viewport.
-   * Width = min(390px, 96vw). Height = min(720px, 96vh).
-   * Aspect ratio kept by letting flex children absorb remaining space.
-   */
   width: min(var(--phone-w), 96vw);
   height: min(var(--phone-h), 96vh);
   border-radius: clamp(16px, 5vw, var(--phone-r));
   background: #0a0a18;
-  border: 2px solid var(--border-col);
+  border: 2px solid color-mix(in srgb, var(--dim-color) 50%, transparent);
   box-shadow:
     0 0 0 1px rgba(0, 0, 0, 0.8),
-    0 0 40px rgba(0, 255, 204, 0.15),
-    0 0 80px rgba(0, 255, 204, 0.06),
+    0 0 40px color-mix(in srgb, var(--dim-color) 20%, transparent),
+    0 0 80px color-mix(in srgb, var(--dim-color) 8%, transparent),
     inset 0 0 30px rgba(0, 0, 0, 0.5);
   display: flex;
   flex-direction: column;
   overflow: hidden;
+  transition: border-color 0.6s ease, box-shadow 0.6s ease;
 }
 
 /* On true mobile (narrow + short), go fully edge-to-edge */
@@ -138,36 +135,21 @@ body {
   flex-shrink: 0;
   height: 48px;
   background: #08081a;
-  border-bottom: 1px solid var(--border-col);
+  border-bottom: 1px solid color-mix(in srgb, var(--dim-color) 35%, transparent);
   display: flex;
   align-items: center;
-  justify-content: space-between;
+  justify-content: center;
   padding: 0 20px;
   border-radius: var(--phone-r) var(--phone-r) 0 0;
-}
-
-.phone-camera {
-  width: 10px;
-  height: 10px;
-  border-radius: 50%;
-  background: #1a1a2e;
-  border: 1px solid rgba(0, 255, 204, 0.3);
-  box-shadow: 0 0 6px rgba(0, 255, 204, 0.2);
+  transition: border-color 0.6s ease;
 }
 
 .phone-title-bar {
   font-family: 'Black Ops One', sans-serif;
   font-size: 0.65rem;
   letter-spacing: 3px;
-  color: rgba(0, 255, 204, 0.6);
-}
-
-.phone-speaker {
-  width: 32px;
-  height: 4px;
-  border-radius: 2px;
-  background: #1a1a2e;
-  border: 1px solid rgba(0, 255, 204, 0.2);
+  color: color-mix(in srgb, var(--dim-color) 70%, transparent);
+  transition: color 0.6s ease;
 }
 
 /* ── Game Area ─────────────────────────────────────────── */
@@ -202,19 +184,21 @@ body {
   flex-shrink: 0;
   height: 52px;
   background: #08081a;
-  border-top: 1px solid var(--border-col);
+  border-top: 1px solid color-mix(in srgb, var(--dim-color) 35%, transparent);
   display: flex;
   align-items: center;
   justify-content: center;
   border-radius: 0 0 var(--phone-r) var(--phone-r);
+  transition: border-color 0.6s ease;
 }
 
 .phone-home-btn {
   width: 42px;
   height: 5px;
   border-radius: 3px;
-  background: rgba(0, 255, 204, 0.25);
-  border: 1px solid rgba(0, 255, 204, 0.2);
+  background: color-mix(in srgb, var(--dim-color) 25%, transparent);
+  border: 1px solid color-mix(in srgb, var(--dim-color) 20%, transparent);
+  transition: background 0.6s ease, border-color 0.6s ease;
 }
 
 /* ── Screens ───────────────────────────────────────────── */
@@ -972,8 +956,55 @@ kbd {
   color: #ff3c14;
 }
 
-/* HUD hell indicator */
-.hud-dim.hell-mode {
+/* ── Dimension Score threshold buttons ──────────────────── */
+.option-row-dimscore {
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.option-row-dimscore .option-label-group {
+  gap: 2px;
+}
+
+.option-row-dimscore .option-sublabel {
+  color: rgba(0, 255, 204, 0.35);
+}
+
+.dim-score-btns {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.dim-score-btn {
+  background: rgba(0, 255, 204, 0.06);
+  border: 1px solid rgba(0, 255, 204, 0.2);
+  color: rgba(0, 255, 204, 0.5);
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 1px;
+  padding: 5px 10px;
+  border-radius: 4px;
+  cursor: pointer;
+  transition: all 0.15s ease;
+  outline: none;
+}
+
+.dim-score-btn:hover {
+  border-color: rgba(0, 255, 204, 0.5);
+  color: var(--accent);
+  background: rgba(0, 255, 204, 0.1);
+}
+
+.dim-score-btn.active {
+  background: rgba(0, 255, 204, 0.18);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 10px rgba(0, 255, 204, 0.3);
+}
+
+
   border-color: #ff3c14 !important;
   color: #ff3c14 !important;
   text-shadow: 0 0 10px #ff3c14, 0 0 20px rgba(255,60,20,0.5) !important;
@@ -1175,4 +1206,70 @@ kbd {
 .phone-frame.intro-visible {
   opacity: 1;
   transform: none;
+}
+
+/* ── Leaderboard Tabs ───────────────────────────────────── */
+.lb-tab-bar {
+  display: flex;
+  width: 100%;
+  gap: 6px;
+  margin-bottom: 2px;
+}
+
+.lb-tab {
+  flex: 1;
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 0.72rem;
+  letter-spacing: 2px;
+  padding: 8px 6px;
+  border: 1px solid rgba(0,255,204,0.25);
+  background: transparent;
+  color: rgba(0,255,204,0.35);
+  cursor: pointer;
+  border-radius: 3px;
+  transition: all 0.18s ease;
+  outline: none;
+}
+
+.lb-tab:hover {
+  border-color: rgba(0,255,204,0.5);
+  color: var(--accent);
+}
+
+.lb-tab.lb-tab-active {
+  background: rgba(0,255,204,0.1);
+  border-color: var(--accent);
+  color: var(--accent);
+  box-shadow: 0 0 10px rgba(0,255,204,0.2);
+}
+
+.lb-tab-hell {
+  border-color: rgba(255,60,20,0.25) !important;
+  color: rgba(255,100,60,0.45) !important;
+}
+
+.lb-tab-hell:hover {
+  border-color: rgba(255,60,20,0.6) !important;
+  color: #ff6644 !important;
+}
+
+.lb-tab-hell.lb-tab-active {
+  background: rgba(255,40,0,0.1) !important;
+  border-color: #ff3c14 !important;
+  color: #ff6644 !important;
+  box-shadow: 0 0 10px rgba(255,60,20,0.25) !important;
+}
+
+/* Hell leaderboard rows */
+.lb-row-hell .lb-rank { color: #ff6644; }
+.lb-row-hell .lb-name { color: #ffaa88; }
+.lb-row-hell .lb-score { color: #ff4422; }
+
+.lb-boss {
+  font-size: 0.72rem;
+  color: #ff6644;
+  letter-spacing: 1px;
+  opacity: 0.85;
+  min-width: 28px;
+  text-align: center;
 }
