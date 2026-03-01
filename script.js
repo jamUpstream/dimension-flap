@@ -1213,7 +1213,7 @@ function spawnFireballs(boss) {
       r: 7,
       phase: Math.random() * Math.PI * 2,
     });
-    SFX.flap();
+    SFX.die();
   }
 }
 
@@ -1235,7 +1235,7 @@ function spawnFireballsSpread(boss) {
       phase: Math.random() * Math.PI * 2,
     });
   }
-  SFX.flap();
+  SFX.die();
 }
 
 // Triple burst: 3 rapid consecutive aimed shots
@@ -1253,7 +1253,7 @@ function spawnTripleBurst(boss) {
         vy: Math.sin(angle) * speed,
         r: 7, phase: Math.random() * Math.PI * 2,
       });
-      SFX.flap();
+      SFX.die();
     }, burst * 180);
   }
 }
@@ -1282,6 +1282,7 @@ function spawnOrbitRing(boss) {
       orbitRadius: orbitR,
     });
   }
+  SFX.dimShift();
   // After 2s, release all orbiting fireballs toward player
   setTimeout(() => {
     if (!state.boss) return;
@@ -1294,7 +1295,7 @@ function spawnOrbitRing(boss) {
       fb.vx = Math.cos(angle) * speed;
       fb.vy = Math.sin(angle) * speed;
     }
-    SFX.dimShift();
+    SFX.die();
   }, 2000);
 }
 
