@@ -7,6 +7,10 @@
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
   <title>Dimension Flap</title>
+  <link rel="manifest" href="manifest.json" />
+  <meta name="theme-color" content="#00ffcc" />
+  <link rel="apple-touch-icon" href="icon-192.png" />
+  <meta name="apple-mobile-web-app-title" content="DimFlap" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
@@ -191,6 +195,91 @@
 
   </div><!-- /phone-frame -->
 
+  <!-- ═══════════════════════════════════════════
+       PWA INSTALL PROMPT
+  ════════════════════════════════════════════ -->
+  <div id="pwaPrompt" class="pwa-prompt hidden" role="dialog" aria-label="Install Dimension Flap">
+    <div class="pwa-prompt-inner">
+      <img src="icon-192.png" class="pwa-icon" alt="Dimension Flap icon" />
+      <div class="pwa-text">
+        <div class="pwa-title">INSTALL DIMENSION FLAP</div>
+        <div class="pwa-sub">Add to home screen &amp; play offline</div>
+      </div>
+      <div class="pwa-btns">
+        <button id="pwaInstallBtn" class="pwa-btn pwa-btn-yes">INSTALL</button>
+        <button id="pwaDismissBtn" class="pwa-btn pwa-btn-no">NOT NOW</button>
+      </div>
+    </div>
+  </div>
+
   <script src="script.js"></script>
+  <script>
+    // ── Service Worker registration ──────────────────────────
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('./sw.js').catch(() => {});
+      });
+    }
+
+    // ── PWA Install Prompt ───────────────────────────────────
+    (function initPWA() {
+      const prompt = document.getElementById('pwaPrompt');
+      const installBtn = document.getElementById('pwaInstallBtn');
+      const dismissBtn = document.getElementById('pwaDismissBtn');
+      let deferredEvent = null;
+
+      // Don't show if already installed or dismissed before
+      if (window.matchMedia('(display-mode: standalone)').matches) return;
+      if (localStorage.getItem('pwa_dismissed')) return;
+
+      function showPrompt() {
+        prompt.classList.remove('hidden');
+        requestAnimationFrame(() => prompt.classList.add('visible'));
+      }
+
+      function hidePrompt() {
+        prompt.classList.remove('visible');
+        setTimeout(() => prompt.classList.add('hidden'), 400);
+      }
+
+      // Chrome / Android — beforeinstallprompt fires
+      window.addEventListener('beforeinstallprompt', e => {
+        e.preventDefault();
+        deferredEvent = e;
+        // Show after a short delay so intro can finish first
+        setTimeout(showPrompt, 3200);
+      });
+
+      installBtn.addEventListener('click', async () => {
+        hidePrompt();
+        if (deferredEvent) {
+          deferredEvent.prompt();
+          const { outcome } = await deferredEvent.userChoice;
+          deferredEvent = null;
+          if (outcome === 'dismissed') localStorage.setItem('pwa_dismissed', '1');
+        }
+      });
+
+      dismissBtn.addEventListener('click', () => {
+        hidePrompt();
+        localStorage.setItem('pwa_dismissed', '1');
+      });
+
+      // iOS Safari — no beforeinstallprompt; show manual instructions
+      const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+      const isInStandalone = window.navigator.standalone;
+      if (isIOS && !isInStandalone && !localStorage.getItem('pwa_dismissed')) {
+        setTimeout(() => {
+          // Swap install button text for iOS manual flow
+          installBtn.textContent = 'HOW TO INSTALL';
+          installBtn.addEventListener('click', () => {
+            hidePrompt();
+            alert('Tap the Share button ⬆ at the bottom of Safari, then choose "Add to Home Screen".');
+          }, { once: true });
+          showPrompt();
+        }, 3200);
+      }
+    })();
+  </script>
 </body>
 </html>

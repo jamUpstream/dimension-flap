@@ -1273,3 +1273,112 @@ kbd {
   min-width: 28px;
   text-align: center;
 }
+
+
+/* ============================================================
+   PWA INSTALL PROMPT
+   ============================================================ */
+.pwa-prompt {
+  position: fixed;
+  bottom: 28px;
+  left: 50%;
+  transform: translateX(-50%) translateY(20px);
+  width: min(420px, calc(100vw - 24px));
+  z-index: 99999;
+  opacity: 0;
+  transition: opacity 0.4s ease, transform 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+  pointer-events: none;
+}
+
+.pwa-prompt.hidden {
+  display: none;
+}
+
+.pwa-prompt.visible {
+  opacity: 1;
+  transform: translateX(-50%) translateY(0);
+  pointer-events: all;
+}
+
+.pwa-prompt-inner {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  background: rgba(6, 6, 15, 0.97);
+  border: 1px solid rgba(0, 255, 204, 0.5);
+  border-radius: 16px;
+  padding: 14px 16px;
+  box-shadow:
+    0 0 30px rgba(0, 255, 204, 0.18),
+    0 8px 32px rgba(0, 0, 0, 0.7);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
+}
+
+.pwa-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 12px;
+  flex-shrink: 0;
+  border: 1px solid rgba(0, 255, 204, 0.3);
+  box-shadow: 0 0 14px rgba(0, 255, 204, 0.25);
+}
+
+.pwa-text {
+  flex: 1;
+  min-width: 0;
+}
+
+.pwa-title {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 0.82rem;
+  letter-spacing: 2px;
+  color: #00ffcc;
+  text-shadow: 0 0 10px rgba(0, 255, 204, 0.6);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.pwa-sub {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 0.68rem;
+  color: rgba(224, 224, 255, 0.55);
+  letter-spacing: 1px;
+  margin-top: 3px;
+}
+
+.pwa-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex-shrink: 0;
+}
+
+.pwa-btn {
+  font-family: 'Black Ops One', sans-serif;
+  font-size: 0.68rem;
+  letter-spacing: 1.5px;
+  border: none;
+  border-radius: 8px;
+  padding: 7px 14px;
+  cursor: pointer;
+  transition: opacity 0.15s, transform 0.15s;
+}
+
+.pwa-btn:active {
+  transform: scale(0.95);
+  opacity: 0.85;
+}
+
+.pwa-btn-yes {
+  background: #00ffcc;
+  color: #06060f;
+  box-shadow: 0 0 12px rgba(0, 255, 204, 0.45);
+}
+
+.pwa-btn-no {
+  background: transparent;
+  color: rgba(224, 224, 255, 0.45);
+  border: 1px solid rgba(224, 224, 255, 0.18);
+}
