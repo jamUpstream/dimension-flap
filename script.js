@@ -256,10 +256,40 @@ function showToast(msg, color = '#00ffcc') {
     opacity: 1;
     transition: opacity 0.4s ease;
   `;
-  // Anchor inside game area so it stays within the phone frame
   gameArea.appendChild(toast);
   setTimeout(() => { toast.style.opacity = '0'; }, 2500);
   setTimeout(() => { if (toast.parentNode) toast.remove(); }, 3000);
+}
+
+// Floating +N bonus score toast that rises from bird position
+function showBonusScoreToast(bonus) {
+  const toast = document.createElement('div');
+  const birdScreenX = (state.bird.x / canvas.width) * 100;
+  const birdScreenY = (state.bird.y / canvas.height) * 100;
+  toast.textContent = `+${bonus}`;
+  toast.style.cssText = `
+    position: absolute;
+    left: ${birdScreenX}%;
+    top: ${Math.max(5, birdScreenY - 10)}%;
+    transform: translateX(-50%);
+    color: #ffdd00;
+    text-shadow: 0 0 12px #ff9900, 0 0 24px #ff6600;
+    font-family: 'Black Ops One', sans-serif;
+    font-size: 1.4rem;
+    font-weight: bold;
+    z-index: 9998;
+    pointer-events: none;
+    opacity: 1;
+    transition: top 1.2s ease-out, opacity 1.2s ease-out;
+  `;
+  gameArea.appendChild(toast);
+  requestAnimationFrame(() => {
+    requestAnimationFrame(() => {
+      toast.style.top = `${Math.max(2, birdScreenY - 25)}%`;
+      toast.style.opacity = '0';
+    });
+  });
+  setTimeout(() => { if (toast.parentNode) toast.remove(); }, 1400);
 }
 
 document.addEventListener('keydown', e => {
@@ -536,8 +566,8 @@ const HELL_DIM = {
 };
 const HELL_PIPE_SPAWN_DIST = 250;
 const HELL_GAP_START = 300;   // deceptively wide gap at the start
-const HELL_GAP_MIN = 90;    // gap floor — never gets tighter than this
-const HELL_GAP_SHRINK_PER_10 = 21; // how much the gap shrinks every 10 points
+const HELL_GAP_MIN = 170;     // gap floor — never gets tighter than 100px (always passable)
+const HELL_GAP_SHRINK_PER_10 = 1; // gap shrinks very slowly — game lasts much longer
 const HELL_PIPE_START_DELAY = 0;
 
 // Hell Mode twist types — unlocked progressively every 10 points
@@ -552,7 +582,7 @@ const HELL_TWISTS = ['squeeze', 'detach', 'slam'];
 const HELL_BOSS_EVERY = 20;   // boss spawns every N points
 const HELL_BOSS_DURATION = 30;   // seconds the player must survive
 const HELL_BOSS_FPS = 60;   // reference fps for boss timer
-// Base fireballs per boss wave; increases by 1 every boss encounter
+// Base fireballs per boss wave; increases by 1 every 2 bosses (slower scaling)
 const HELL_BOSS_BASE_FIREBALLS = 1;
 // Boss bird geometry
 const BOSS_W = 72, BOSS_H = 58;
@@ -563,6 +593,7 @@ const BOSS_W = 72, BOSS_H = 58;
 let state = {};
 let animFrame;
 let bestScore = 0;
+let bestScoreHell = 0;
 let glitchTimer = 0;
 let scoreSaved = false;  // track if score was already saved this round
 let sfxMuted = false;  // Options: SFX toggle
@@ -756,7 +787,7 @@ function drawStars(dim) {
 
 // Draw a glowing twist label on a hell pipe (e.g. "SQUEEZE", "DETACH", "SLAM")
 function drawHellTwistLabel(p, gapTop, gapBot) {
-  if (!p.hellTwist || lowSpec) return;
+  if (!p.hellTwist) return;
   const labels = { squeeze: '⚡SQUEEZE', detach: '✦DETACH', slam: '⛧SLAM' };
   const label = labels[p.hellTwist];
   if (!label) return;
@@ -767,8 +798,10 @@ function drawHellTwistLabel(p, gapTop, gapBot) {
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
   ctx.globalAlpha = 0.72;
-  ctx.shadowColor = '#ff3c14';
-  ctx.shadowBlur = 8;
+  if (!lowSpec) {
+    ctx.shadowColor = '#ff3c14';
+    ctx.shadowBlur = 8;
+  }
   ctx.fillStyle = '#ff9966';
   ctx.fillText(label, cx, midY);
   ctx.globalAlpha = 1;
@@ -860,7 +893,7 @@ function drawHellIntro() {
   ctx.save();
   ctx.translate(bossCX - (BOSS_W * bossScale) / 2, bossCY - (BOSS_H * bossScale) / 2);
   ctx.scale(bossScale, bossScale);
-  drawBossSprite(0, 0, BOSS_W, BOSS_H, '#ff1a00', '#ff6600', f);
+  drawBossSprite(0, 0, BOSS_W, BOSS_H, '#ff1a00', '#ff6600', f, 0, f * 0.12);
   ctx.restore();
 
   // ── Roar flash (phase 2) ──
@@ -943,7 +976,7 @@ function drawHellIntro() {
 // BOSS BIRD SPRITE — same shape as the player bird, red, flipped to face left
 // x,y = top-left of the bounding box, w/h = size, frame = animation frame counter
 // ══════════════════════════════════════════════════════════
-function drawBossSprite(x, y, w, h, _color1, _color2, frame) {
+function drawBossSprite(x, y, w, h, _color1, _color2, frame, lookDY, wingPhaseOverride) {
   // Scale factors to go from BIRD_W/BIRD_H to boss w/h
   const scaleX = w / BIRD_W;
   const scaleY = h / BIRD_H;
@@ -954,14 +987,22 @@ function drawBossSprite(x, y, w, h, _color1, _color2, frame) {
   ctx.save();
   // Mirror horizontally around the centre so the boss faces left (toward player)
   const midX = x + w / 2;
-  ctx.translate(midX, 0);
+  const midY = y + h / 2;
+  ctx.translate(midX, midY);
+
+  // Tilt toward player (look at bird Y position)
+  const tiltAngle = lookDY !== undefined ? Math.max(-0.3, Math.min(0.3, lookDY * 0.008)) : 0;
+  ctx.rotate(tiltAngle);
+
   ctx.scale(-1, 1);
-  ctx.translate(-midX, 0);
+  ctx.translate(-midX, -midY);
 
   // Now draw exactly like drawBird but using bossColor and boss scale
   const bx = x, by = y;
-  const cx = bx + w / 2, cy = by + h / 2;
-  const wingDrop = Math.sin(frame * 0.12) * 5 * scaleY;
+  const cx2 = bx + w / 2, cy2 = by + h / 2;
+  // Wing phase: use passed phase or frame-based
+  const wingAngle = wingPhaseOverride !== undefined ? wingPhaseOverride : (frame * 0.12);
+  const wingDrop = Math.sin(wingAngle) * 6 * scaleY;
 
   applyShadow(ctx, 10, bossColor);
   // Body
@@ -970,21 +1011,24 @@ function drawBossSprite(x, y, w, h, _color1, _color2, frame) {
   ctx.fill();
   // Wing
   ctx.fillStyle = wingColor;
-  roundRect(ctx, bx - 5 * scaleX, cy - 4 * scaleY + wingDrop, 12 * scaleX, 9 * scaleY, 3);
+  roundRect(ctx, bx - 5 * scaleX, cy2 - 4 * scaleY + wingDrop, 12 * scaleX, 9 * scaleY, 3);
   ctx.fill();
   ctx.shadowBlur = 0;
   // Eye socket
   ctx.fillStyle = '#0a0a12';
   ctx.fillRect(bx + (BIRD_W - 14) * scaleX, by + 7 * scaleY, 7 * scaleX, 6 * scaleY);
-  // Eye — white base
-  ctx.fillStyle = '#ffffff';
+  // Eye — glowing red for boss
+  ctx.fillStyle = '#ff0000';
+  ctx.shadowColor = '#ff0000';
+  ctx.shadowBlur = lowSpec ? 0 : 8;
   ctx.fillRect(bx + (BIRD_W - 13) * scaleX, by + 8 * scaleY, 3 * scaleX, 3 * scaleY);
+  ctx.shadowBlur = 0;
   // Beak
   ctx.fillStyle = '#ffaa00';
   ctx.beginPath();
-  ctx.moveTo(bx + (BIRD_W - 3) * scaleX, cy - 1 * scaleY);
-  ctx.lineTo(bx + (BIRD_W + 7) * scaleX, cy + 1 * scaleY);
-  ctx.lineTo(bx + (BIRD_W - 3) * scaleX, cy + 4 * scaleY);
+  ctx.moveTo(bx + (BIRD_W - 3) * scaleX, cy2 - 1 * scaleY);
+  ctx.lineTo(bx + (BIRD_W + 7) * scaleX, cy2 + 1 * scaleY);
+  ctx.lineTo(bx + (BIRD_W - 3) * scaleX, cy2 + 4 * scaleY);
   ctx.closePath(); ctx.fill();
 
   ctx.restore();
@@ -996,6 +1040,9 @@ function drawBossSprite(x, y, w, h, _color1, _color2, frame) {
 function startBossBattle() {
   state.pipes = [];
   const bossLevel = state.bossCount + 1;
+  const bossBehavior = BOSS_LEVEL_BEHAVIORS[(bossLevel - 1) % BOSS_LEVEL_BEHAVIORS.length];
+  const behaviorLabels = { fireball: 'FIREBALL', spread: 'FAN SPREAD', triple_burst: 'TRIPLE BURST', orbit_ring: 'ORBIT RING', shotgun: 'SHOTGUN' };
+  const behaviorLabel = behaviorLabels[bossBehavior] || bossBehavior.toUpperCase();
   // Top margin: clear the countdown bar + label + generous padding to keep boss visible
   const BOSS_TOP_MARGIN = 100;
   const usableH = canvas.height - GROUND_H;
@@ -1010,25 +1057,23 @@ function startBossBattle() {
     // Timer
     timerFrames: HELL_BOSS_DURATION * HELL_BOSS_FPS,
     elapsed: 0,
-    // Fireballs
+    // Fireballs - slower scaling: 1 fireball per 2 boss levels
     fireballs: [],
-    fireballCount: HELL_BOSS_BASE_FIREBALLS + (bossLevel - 1),
+    fireballCount: HELL_BOSS_BASE_FIREBALLS + Math.floor((bossLevel - 1) / 2),
     fireballCooldown: 0,
-    fireballInterval: Math.max(18, 55 - bossLevel * 5),
+    fireballInterval: Math.max(28, 70 - bossLevel * 4),
+    // Behavior
+    behavior: null,
+    behaviorTimer: 0,
+    wingPhase: 0,
+    lookAtPlayer: 0,
     // Entrance animation
     entranceFrames: 50,
     level: bossLevel,
     // Invincible during entrance
     active: false,
   };
-  // Banner
-  dimBannerText.textContent = `⛧ BOSS LV.${bossLevel} — SURVIVE ${HELL_BOSS_DURATION}s`;
-  dimBanner.classList.remove('show');
-  void dimBanner.offsetWidth;
-  dimBanner.style.color = '#ff2200';
-  dimBanner.style.borderColor = '#ff2200';
-  dimBanner.style.textShadow = '0 0 20px #ff2200';
-  dimBanner.classList.add('show');
+  // No dim banner during boss fight — info is shown in the canvas HUD instead
   SFX.dimShift();
   gameArea.classList.remove('shake', 'glitch-flash');
   void gameArea.offsetWidth;
@@ -1054,17 +1099,47 @@ function updateBoss(dt) {
   }
   boss.active = true;
 
-  // ── Vertical drift (bounces off walls) ──
+  // ── Boss look direction (toward player) ──
+  boss.lookAtPlayer = state.bird.y + BIRD_H / 2 - (boss.y + BOSS_H / 2);
+
+  // ── Vertical drift (tracks player with some inertia) ──
   const usableH = canvas.height - GROUND_H;
+  const birdCY = state.bird.y + BIRD_H / 2;
+  const bossCY = boss.y + BOSS_H / 2;
+
+  // Behavior: fixed tracking speed — no level scaling, keeps difficulty fair
+  const trackStrength = 0.010;
+  const targetVY = (birdCY - bossCY) * trackStrength * 60;
+  boss.vy += (targetVY - boss.vy) * 0.04 * dt;
+  // Fixed vertical speed cap
+  const maxVY = 1.8;
+  boss.vy = Math.max(-maxVY, Math.min(maxVY, boss.vy));
+
+  // Boss "flap" — flap wing when moving up
+  boss.wingPhase = (boss.wingPhase || 0) + 0.15 * dt;
+  if (boss.vy < -0.5) boss.wingPhase += 0.2 * dt; // flap faster when rising
+
   boss.y += boss.vy * dt;
   if (boss.y <= boss.topMargin) { boss.y = boss.topMargin; boss.vy = Math.abs(boss.vy); }
   if (boss.y + BOSS_H >= usableH - 10) { boss.y = usableH - BOSS_H - 10; boss.vy = -Math.abs(boss.vy); }
 
-  // ── Fire fireballs ──
+  // ── Special behavior timer ──
+  boss.behaviorTimer = (boss.behaviorTimer || 0) + dt;
+  if (!boss.behavior) boss.behavior = pickBossBehavior(boss.level);
+
+  // ── Fire / special attacks ──
   boss.fireballCooldown -= dt;
   if (boss.fireballCooldown <= 0) {
     boss.fireballCooldown = boss.fireballInterval;
-    spawnFireballs(boss);
+
+    // Different attacks based on behavior
+    switch (boss.behavior) {
+      case 'spread': spawnFireballsSpread(boss); break;
+      case 'triple_burst': spawnTripleBurst(boss); break;
+      case 'orbit_ring': spawnOrbitRing(boss); break;
+      case 'shotgun': spawnShotgun(boss); break;
+      default: spawnFireballs(boss);
+    }
   }
 
   // ── Update existing fireballs ──
@@ -1072,15 +1147,33 @@ function updateBoss(dt) {
     fb.x += fb.vx * dt;
     fb.y += fb.vy * dt;
     fb.phase += 0.18 * dt;
-    // Slight homing on harder levels
-    if (boss.level >= 3) {
+    // Orbit fireballs rotate around boss current center
+    if (fb.orbit) {
+      fb.orbitAngle = (fb.orbitAngle || 0) + fb.orbitSpeed * dt;
+      fb.x = boss.x + BOSS_W / 2 + Math.cos(fb.orbitAngle) * fb.orbitRadius;
+      fb.y = boss.y + BOSS_H / 2 + Math.sin(fb.orbitAngle) * fb.orbitRadius;
+    }
+    // Very slight homing — same regardless of level
+    if (!fb.orbit) {
       const dy = state.bird.y + BIRD_H / 2 - (fb.y + fb.r);
-      fb.vy += Math.sign(dy) * 0.06 * dt;
-      fb.vy = Math.max(-6, Math.min(6, fb.vy));
+      fb.vy += Math.sign(dy) * 0.025 * dt;
+      fb.vy = Math.max(-4, Math.min(4, fb.vy));
     }
   }
   // Remove off-screen
-  boss.fireballs = boss.fireballs.filter(fb => fb.x + fb.r > 0);
+  boss.fireballs = boss.fireballs.filter(fb => fb.x + fb.r > 0 && fb.x - fb.r < canvas.width && fb.y - fb.r < canvas.height + 20);
+
+  // ── Boss body collision with player → death ──
+  if (!cheatNoclip) {
+    const bx = state.bird.x + 5, by = state.bird.y + 5;
+    const bw = BIRD_W - 10, bh = BIRD_H - 8;
+    // Boss hitbox (slightly inset)
+    const bosx = boss.x + 6, bosy = boss.y + 6;
+    const bosw = BOSS_W - 12, bosh = BOSS_H - 12;
+    if (bx + bw > bosx && bx < bosx + bosw && by + bh > bosy && by < bosy + bosh) {
+      endGame(); return;
+    }
+  }
 
   // ── Countdown: timer runs out → boss defeated ──
   const remaining = boss.timerFrames - (boss.elapsed - boss.entranceFrames);
@@ -1089,32 +1182,141 @@ function updateBoss(dt) {
   }
 }
 
+// Each boss level has exactly one fixed behavior
+// Level 1: fireball, Level 2: spread, Level 3: triple_burst, Level 4: orbit_ring, Level 5+: shotgun (cycles)
+const BOSS_LEVEL_BEHAVIORS = ['fireball', 'spread', 'triple_burst', 'orbit_ring', 'shotgun'];
+function pickBossBehavior(level) {
+  return BOSS_LEVEL_BEHAVIORS[(level - 1) % BOSS_LEVEL_BEHAVIORS.length];
+}
+
+// Original single-aim fireball (with spread) — max 3 simultaneous, always leaves a gap
 function spawnFireballs(boss) {
-  const count = boss.fireballCount;
+  const count = Math.min(3, boss.fireballCount);
   const birdCY = state.bird.y + BIRD_H / 2;
   const bossCY = boss.y + BOSS_H / 2;
   for (let i = 0; i < count; i++) {
-    // Spread angles: first fireball aims at bird, others fan out
     let angle;
     if (count === 1) {
       angle = Math.atan2(birdCY - bossCY, state.bird.x - boss.x);
     } else {
-      const spread = Math.PI * 0.28;
+      // Spread capped so fireballs never cover full vertical — leave a dodge gap
+      const spread = Math.PI * 0.22;
       const baseAngle = Math.atan2(birdCY - bossCY, state.bird.x - boss.x);
       angle = baseAngle + (i / (count - 1) - 0.5) * spread;
     }
-    // Higher levels fire a bit faster
-    const speed = 3.2 + boss.level * 0.4;
+    const speed = 3.0; // fixed speed — difficulty comes from patterns, not speed
     boss.fireballs.push({
       x: boss.x - 8,
       y: bossCY - 6,
       vx: Math.cos(angle) * speed,
       vy: Math.sin(angle) * speed,
-      r: 8 + boss.level,  // bigger fireballs at higher levels
+      r: 7,
       phase: Math.random() * Math.PI * 2,
     });
-    SFX.flap(); // quick whoosh on fire
+    SFX.flap();
   }
+}
+
+// Fan spread: 3 fireballs in a moderate fan — always leaves dodge space above/below
+function spawnFireballsSpread(boss) {
+  const bossCY = boss.y + BOSS_H / 2;
+  const birdCY = state.bird.y + BIRD_H / 2;
+  const baseAngle = Math.atan2(birdCY - bossCY, state.bird.x - boss.x);
+  const count = 3;
+  const spread = Math.PI * 0.32; // narrower than before — top/bottom gaps remain open
+  for (let i = 0; i < count; i++) {
+    const angle = baseAngle + (i / (count - 1) - 0.5) * spread;
+    const speed = 2.6; // fixed speed
+    boss.fireballs.push({
+      x: boss.x - 8, y: bossCY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      r: 7,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+  SFX.flap();
+}
+
+// Triple burst: 3 rapid consecutive aimed shots
+function spawnTripleBurst(boss) {
+  const bossCY = boss.y + BOSS_H / 2;
+  for (let burst = 0; burst < 3; burst++) {
+    setTimeout(() => {
+      if (!state.boss) return;
+      const birdCY = state.bird.y + BIRD_H / 2;
+      const angle = Math.atan2(birdCY - bossCY, state.bird.x - boss.x);
+      const speed = 3.2; // fixed speed
+      boss.fireballs.push({
+        x: boss.x - 8, y: bossCY,
+        vx: Math.cos(angle) * speed,
+        vy: Math.sin(angle) * speed,
+        r: 7, phase: Math.random() * Math.PI * 2,
+      });
+      SFX.flap();
+    }, burst * 180);
+  }
+}
+
+// Orbit ring: 3 fireballs orbit the boss, then release. Only one ring active at a time.
+function spawnOrbitRing(boss) {
+  // Don't spawn a new ring if one is already orbiting
+  if (boss.fireballs.some(fb => fb.orbit)) return;
+
+  const count = 3;
+  // Keep radius tight so it stays on screen regardless of boss position
+  const orbitR = 38;
+  for (let i = 0; i < count; i++) {
+    const startAngle = (i / count) * Math.PI * 2;
+    const bossCX = boss.x + BOSS_W / 2;
+    const bossCY = boss.y + BOSS_H / 2;
+    boss.fireballs.push({
+      x: bossCX + Math.cos(startAngle) * orbitR,
+      y: bossCY + Math.sin(startAngle) * orbitR,
+      vx: 0, vy: 0,
+      r: 7,
+      phase: Math.random() * Math.PI * 2,
+      orbit: true,
+      orbitAngle: startAngle,
+      orbitSpeed: 0.06,
+      orbitRadius: orbitR,
+    });
+  }
+  // After 2s, release all orbiting fireballs toward player
+  setTimeout(() => {
+    if (!state.boss) return;
+    for (const fb of boss.fireballs) {
+      if (!fb.orbit) continue;
+      fb.orbit = false;
+      const birdCY = state.bird.y + BIRD_H / 2;
+      const angle = Math.atan2(birdCY - fb.y, state.bird.x - fb.x);
+      const speed = 3.0; // fixed speed
+      fb.vx = Math.cos(angle) * speed;
+      fb.vy = Math.sin(angle) * speed;
+    }
+    SFX.dimShift();
+  }, 2000);
+}
+
+// Shotgun: 5 fast small pellets in a cone — leaves top/bottom escape routes
+function spawnShotgun(boss) {
+  const bossCY = boss.y + BOSS_H / 2;
+  const birdCY = state.bird.y + BIRD_H / 2;
+  const baseAngle = Math.atan2(birdCY - bossCY, state.bird.x - boss.x);
+  const count = 5;
+  const spread = Math.PI * 0.3;
+  for (let i = 0; i < count; i++) {
+    const angle = baseAngle + (i / (count - 1) - 0.5) * spread + (Math.random() - 0.5) * 0.08;
+    const speed = 3.8 + Math.random() * 0.8; // fixed base, tiny random variance only
+    boss.fireballs.push({
+      x: boss.x - 8, y: bossCY,
+      vx: Math.cos(angle) * speed,
+      vy: Math.sin(angle) * speed,
+      r: 4,
+      phase: Math.random() * Math.PI * 2,
+    });
+  }
+  SFX.die();
 }
 
 function endBossBattle() {
@@ -1122,20 +1324,27 @@ function endBossBattle() {
   state.bossCount++;
   state.boss = null;
   // Clear fireballs naturally removed with boss
-  showToast(`⛧ SURVIVED LV.${boss.level} BOSS!`, '#ff9966');
-  // Flash green briefly
+
+  // Randomized bonus score 1-5
+  const bonus = 1 + Math.floor(Math.random() * 5);
+  state.score += bonus;
+  scoreDisplay.textContent = state.score;
+
+  showToast(`⛧ BOSS SURVIVED! +${bonus}`, '#ff9966');
+  showBonusScoreToast(bonus);
+
+  // Flash briefly
   gameArea.classList.remove('shake');
   void gameArea.offsetWidth;
   SFX.dimShift();
   // Resume pipes — spawn a batch to fill the screen naturally
-  // (the main update loop will respawn them)
 }
 
 function drawBoss() {
   const boss = state.boss;
   if (!boss) return;
-  // drawBossSprite handles its own horizontal flip internally
-  drawBossSprite(boss.x, boss.y, BOSS_W, BOSS_H, '#ff1a00', '#cc0000', boss.frame);
+  // Pass lookAtPlayer (dy) and wing phase for flapping
+  drawBossSprite(boss.x, boss.y, BOSS_W, BOSS_H, '#ff1a00', '#cc0000', boss.frame, boss.lookAtPlayer, boss.wingPhase);
 
   // Draw fireballs
   for (const fb of boss.fireballs) {
@@ -1147,55 +1356,57 @@ function drawBoss() {
     const remaining = Math.max(0, boss.timerFrames - (boss.elapsed - boss.entranceFrames));
     const secs = Math.ceil(remaining / HELL_BOSS_FPS);
     const frac = remaining / boss.timerFrames;
-    const barW = canvas.width * 0.55;
-    const barH = 8;
+    const barW = canvas.width * 0.52;
+    const barH = 7;
     const barX = canvas.width / 2 - barW / 2;
-    // Push bar down: boss level label (14px) + gap (4px) = starts at 18px
-    const labelY = 18;
-    const barY = labelY + 16;
+
+    const behaviorLabels2 = { fireball: 'FIREBALL', spread: 'FAN SPREAD', triple_burst: 'TRIPLE BURST', orbit_ring: 'ORBIT RING', shotgun: 'SHOTGUN' };
+    const bLabel = behaviorLabels2[boss.behavior] || boss.behavior.toUpperCase();
 
     ctx.save();
 
-    // Boss level label above the bar
-    ctx.font = `bold 10px "Share Tech Mono",monospace`;
+    // ── Row 1: boss level + behavior name ──
+    const rowY = 5;
+    ctx.font = `bold 9px "Share Tech Mono",monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = '#ff6644';
-    if (!lowSpec) { ctx.shadowColor = '#ff4400'; ctx.shadowBlur = 8; }
-    ctx.globalAlpha = 0.9;
-    ctx.fillText(`⛧ BOSS LV.${boss.level}`, canvas.width / 2, labelY);
+    if (!lowSpec) { ctx.shadowColor = '#ff4400'; ctx.shadowBlur = 6; }
+    ctx.globalAlpha = 0.92;
+    ctx.fillText(`⛧ BOSS LV.${boss.level}  ·  ${bLabel}`, canvas.width / 2, rowY);
     ctx.globalAlpha = 1;
     ctx.shadowBlur = 0;
 
+    // ── Row 2: timer bar (full width with padding) ──
+    const barY2 = rowY + 13;
     // Track background
     ctx.fillStyle = 'rgba(0,0,0,0.55)';
-    roundRect(ctx, barX - 2, barY - 2, barW + 4, barH + 4, 4);
+    roundRect(ctx, barX - 2, barY2 - 2, barW + 4, barH + 4, 4);
     ctx.fill();
 
     // Fill — red→orange
     const barColor = frac > 0.4 ? '#ff4400' : '#ff9900';
     ctx.fillStyle = barColor;
     if (!lowSpec) { ctx.shadowColor = barColor; ctx.shadowBlur = 10; }
-    roundRect(ctx, barX, barY, barW * frac, barH, 3);
+    roundRect(ctx, barX, barY2, barW * frac, barH, 3);
     ctx.fill();
 
-    // Timer text below bar
+    // ── Row 3: seconds countdown below the bar ──
     ctx.shadowBlur = 0;
-    ctx.font = `bold ${Math.round(canvas.width * 0.055)}px "Share Tech Mono",monospace`;
+    ctx.font = `bold 10px "Share Tech Mono",monospace`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'top';
     ctx.fillStyle = secs <= 5 ? '#ffff00' : '#ff9966';
-    if (!lowSpec) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 12; }
-
+    if (!lowSpec) { ctx.shadowColor = ctx.fillStyle; ctx.shadowBlur = 8; }
     if (secs <= 5) {
       const pulse = 1 + Math.sin(boss.frame * 0.4) * 0.15;
       ctx.save();
-      ctx.translate(canvas.width / 2, barY + barH + 5);
+      ctx.translate(canvas.width / 2, barY2 + barH + 4);
       ctx.scale(pulse, pulse);
       ctx.fillText(`${secs}s`, 0, 0);
       ctx.restore();
     } else {
-      ctx.fillText(`${secs}s`, canvas.width / 2, barY + barH + 5);
+      ctx.fillText(`${secs}s`, canvas.width / 2, barY2 + barH + 4);
     }
 
     ctx.restore();
@@ -1771,16 +1982,18 @@ function draw() {
     drawBoss();
   }
 
-  // Noclip indicator
+  // Noclip indicator — big banner below the ground, impossible to miss
   if (cheatNoclip) {
+    const groundY = canvas.height - GROUND_H;
     ctx.save();
-    ctx.font = '9px "Share Tech Mono",monospace';
+    ctx.font = `bold ${Math.round(canvas.width * 0.07)}px "Share Tech Mono",monospace`;
     ctx.fillStyle = '#ff3c78';
     ctx.shadowColor = '#ff3c78';
-    ctx.shadowBlur = 8;
-    ctx.globalAlpha = 0.7 + Math.sin(Date.now() * 0.006) * 0.3;
+    ctx.shadowBlur = lowSpec ? 0 : 16;
+    ctx.globalAlpha = 0.85 + Math.sin(Date.now() * 0.008) * 0.15;
     ctx.textAlign = 'center';
-    ctx.fillText('⚡ NOCLIP', canvas.width / 2, 18);
+    ctx.textBaseline = 'middle';
+    ctx.fillText('⚡ NOCLIP ⚡', canvas.width / 2, groundY + GROUND_H / 2);
     ctx.restore();
   }
 
@@ -1855,9 +2068,17 @@ function endGame() {
   cancelAnimationFrame(animFrame);
   SFX.die();
 
-  if (state.score > bestScore) bestScore = state.score;
+  // Update best score only if noclip was NOT used
+  if (!cheatNoclip) {
+    if (hellMode) {
+      if (state.score > bestScoreHell) bestScoreHell = state.score;
+    } else {
+      if (state.score > bestScore) bestScore = state.score;
+    }
+  }
   finalScoreEl.textContent = state.score;
-  bestScoreEl.textContent = bestScore;
+  // Show best score: 0 if noclip used, otherwise mode-specific best
+  bestScoreEl.textContent = cheatNoclip ? '—' : (hellMode ? bestScoreHell : bestScore);
 
   // Shake
   gameArea.classList.remove('shake');
