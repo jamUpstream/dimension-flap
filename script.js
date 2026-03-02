@@ -579,8 +579,8 @@ const HELL_TWISTS = ['squeeze', 'detach', 'slam'];
 // ══════════════════════════════════════════════════════════
 // BOSS BATTLE CONSTANTS (Hell Mode only)
 // ══════════════════════════════════════════════════════════
-const HELL_BOSS_EVERY = 20;   // boss spawns every N points
-const HELL_BOSS_DURATION = 30;   // seconds the player must survive
+const HELL_BOSS_EVERY = 15;   // boss spawns every N points
+const HELL_BOSS_DURATION = 20;   // seconds the player must survive
 const HELL_BOSS_FPS = 60;   // reference fps for boss timer
 // Base fireballs per boss wave; increases by 1 every 2 bosses (slower scaling)
 const HELL_BOSS_BASE_FIREBALLS = 1;
